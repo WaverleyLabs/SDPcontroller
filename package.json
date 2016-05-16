@@ -1,0 +1,17 @@
+{
+  "name": "sdpCredentialManager",
+  "version": "1.0.0",
+  "description": "",
+  "main": "sdpCredentialManager.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "await": "^0.2.6",
+    "mysql": "^2.10.2",
+    "pem": "^1.8.1"
+  }
+}
