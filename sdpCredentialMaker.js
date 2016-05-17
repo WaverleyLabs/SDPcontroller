@@ -1,11 +1,48 @@
 var pem    = require('pem');
 var fs     = require('fs');
 var await  = require('await');
+var prompt = require('prompt');
 
 var config;
+var caKeyPassword;
 
 function credentialMaker(configuration) {
 	config = configuration;
+}
+
+credentialMaker.prototype.init = function(callback) {
+  caKeyPassword = config.caKeyPassword;
+
+  if(caKeyPassword || !config.caKeyPasswordRequired)
+    callback();
+  else
+  {
+    var schema = {
+      properties: {
+        password: {
+          description: 'Enter certificate authority key password',
+          hidden: true,
+          replace: '*',
+          required: true
+        }
+      }
+    };
+
+    prompt.start();
+
+    prompt.get(schema, function(err,result) {
+      if(err)
+      {
+        console.log("prompt.get failed for cert authority key password");
+        throw err;
+      }
+      else
+      {
+          caKeyPassword = result.password;
+          callback();
+      }    
+    });
+  }
 };
 
 
@@ -95,7 +132,7 @@ function getNewKey(keyLen, callback) {
 function getNewCert(memberDetails, callback) {
   var certOptions = {
     serviceKey: fs.readFileSync(config.caKey),
-    serviceKeyPassword: config.caKeyPassword,
+    serviceKeyPassword: caKeyPassword,
     serviceCertificate: fs.readFileSync(config.caCert),
     serial: memberDetails.serial,
     selfSigned: true,
