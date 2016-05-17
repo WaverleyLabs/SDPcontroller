@@ -54,7 +54,7 @@ To use this module:
 
 10. To start the controller, in a terminal enter: 
 
-    node ./sdpCredentialManager
+    node ./sdpController.js
 
 11. See the following sites for more information about the other 
     required SDP components, namely the SDP gateway and SDP client.
