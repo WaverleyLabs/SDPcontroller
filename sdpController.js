@@ -6,11 +6,33 @@ var config = require('./config'); // get our config file
 var credentialMaker = require('./sdpCredentialMaker');
 var prompt = require("prompt");
 
+const encryptionKeyLenMin = 4;
+const encryptionKeyLenMax = 32;
+const hmacKeyLenMin = 4;
+const hmacKeyLenMax = 128;
+
 // a couple global variables
 var db;
 var dbPassword = config.dbPassword;
 var serverKeyPassword = config.serverKeyPassword;
 var myCredentialMaker = new credentialMaker(config);
+
+
+// check a couple config settings
+if(config.encryptionKeyLen < encryptionKeyLenMin
+   || config.encryptionKeyLen > encryptionKeyLenMax)
+{
+  var explanation = "Range is " + encryptionKeyLenMin + " to " + encryptionKeyLenMax;
+  throw new sdpConfigException("encryptionKeyLen", explanation);
+}
+
+if(config.hmacKeyLen < hmacKeyLenMin
+   || config.hmacKeyLen > hmacKeyLenMax)
+{
+  var explanation = "Range is " + hmacKeyLenMin + " to " + hmacKeyLenMax
+  throw new sdpConfigException("hmacKeyLen", explanation);
+}
+
 
 myCredentialMaker.init(startController);
 
@@ -417,8 +439,13 @@ function startServer() {
 }
 
 function sdpQueryException(sdpId, entries) {
-   this.name = "SdpQueryException";
-   this.message = "SDP ID " + sdpId + " query returned " + entries + " entries";
+  this.name = "SdpQueryException";
+  this.message = "SDP ID " + sdpId + " query returned " + entries + " entries";
+}
+
+function sdpConfigException(configName, correctiveMessage) {
+  this.name = "SdpConfigException";
+  this.message = "Invalid entry for " + configName + "\n" + correctiveMessage;
 }
 
 
