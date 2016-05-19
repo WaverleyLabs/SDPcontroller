@@ -57,7 +57,6 @@ function startController() {
     prompt.get(schema, function(err,result) {
         if(err)
         {
-            db.end();
             throw err;
         }
         else
@@ -71,7 +70,7 @@ function startController() {
 
 function checkDbPassword() {
   if(dbPassword)
-    startDbConnection();
+    startDbPool();
   else
   {
     var schema = {
@@ -93,28 +92,24 @@ function checkDbPassword() {
         else
         {
             dbPassword = result.password;
-            startDbConnection();
+            startDbPool();
         }    
     });
   }
 }
 
-function startDbConnection() {
-  // connect to database
-  db = mysql.createConnection({
+function startDbPool() {
+  // set up database pool
+  db = mysql.createPool({
+    connectionLimit: config.maxConnections,
     host: config.dbHost,
     user: config.dbUser,
     password: dbPassword, //config.dbPassword,
-    database: config.dbName
+    database: config.dbName,
+    debug: false
   });
 
-  db.connect(function(err) {
-    if (err) throw err;
-    if(config.debug)
-      console.log('connected to database as id ' + db.threadId);
-    startServer();
-  });
-
+  startServer();
 }
 
 
@@ -142,7 +137,7 @@ function startServer() {
   var server = tls.createServer(options, function (socket) {
 
     if(config.debug)
-      console.log("Socket connection started");
+      console.log("Socket connection started\n");
 
     var subject = null;
     var memberDetails = null;
@@ -154,60 +149,74 @@ function startServer() {
     // Identify the connecting client or gateway
     var sdpId = socket.getPeerCertificate().subject.CN;
 
-    console.log("\nConnection from sdp ID " + sdpId);
+    console.log("Connection from sdp ID " + sdpId + "\n");
 
     // Set the socket timeout to watch for inactivity
     if(config.socketTimeout) 
       socket.setTimeout(config.socketTimeout, function() {
-        console.error("\nConnection to SDP ID " + sdpId + " has timed out. Disconnecting.\n");
+        console.error("Connection to SDP ID " + sdpId + " has timed out. Disconnecting.\n");
         socket.end();
       });
 
     // Find sdpId in the database
-    db.query('SELECT * FROM `sdp_members` WHERE `id` = ?', [sdpId], 
-    function (error, rows, fields) {
-      if (error) {
-        console.error("\nQuery returned error: ");
-        console.error(error);
-        console.error("\nSDP ID unrecognized. Disconnecting.\n");
-        socket.end();
-      } else if (rows.length < 1) {
-        console.error("\nSDP ID not found, disconnecting");
-        socket.end();
-      } else if (rows.length > 1) {
-          // Fatal error, should not be possible to find more than
-          // one instance of an ID
-          throw new sdpQueryException(sdpId, rows.length);
-      } else {
-
-        memberDetails = rows[0];
-
-        if (config.debug) {
-          console.log("\nData for client is: ");
-          console.log(memberDetails);
-        }
-
-	// Send initial credential update
-        handleCredentialUpdate(null);
-
-        // Handle incoming requests from members
-        socket.on('data', function (data) {
-          processMessage(data);
-        });
-
-        socket.on('end', function () {
-          console.log("\nConnection to SDP ID " + sdpId + " closed.\n");
-        });
-
-        socket.on('error', function (error) {
-          console.error(error);
-        });
-
-      }  
-
+    db.getConnection(function(error,connection){
+      if(error){
+        connection.release();
+	      console.error("Error connecting to database: " + error + "\n");
+	      socket.end();
+	      return;
+      }
+	    connection.query('SELECT * FROM `sdp_members` WHERE `id` = ?', [sdpId], 
+	    function (error, rows, fields) {
+	      connection.release();
+	      if (error) {
+	        console.error("Query returned error: " + error + "\n");
+	        console.error(error);
+	        console.error("SDP ID unrecognized. Disconnecting.\n");
+	        socket.end();
+	      } else if (rows.length < 1) {
+	        console.error("SDP ID not found, disconnecting\n");
+	        socket.end();
+	      } else if (rows.length > 1) {
+	          // Fatal error, should not be possible to find more than
+	          // one instance of an ID
+	          throw new sdpQueryException(sdpId, rows.length);
+	      } else {
+	
+	        memberDetails = rows[0];
+	
+	        if (config.debug) {
+	          console.log("Data for client is: ");
+	          console.log(memberDetails);
+	        }
+	
+		      // Send initial credential update
+	        handleCredentialUpdate(null);
+	
+	        // Handle incoming requests from members
+	        socket.on('data', function (data) {
+	          processMessage(data);
+	        });
+	
+	        socket.on('end', function () {
+	          console.log("Connection to SDP ID " + sdpId + " closed.\n");
+	        });
+	
+	        socket.on('error', function (error) {
+	          console.error(error);
+	        });
+	
+	      }  
+	
+	    });
+	    
+	    connection.on('error', function(error) {
+	      console.error("Error from database connection: " + error + "\n");
+	      socket.end();
+	      return;
+	    });
+	    
     });
-
-
 
     // Parse SDP messages 
     function processMessage(data) {
@@ -339,31 +348,46 @@ function startServer() {
           newKeys.hasOwnProperty('hmacKey')) 
       {
         if(config.debug)
-          console.log("\nFound the new keys to store in database for SDP ID "+sdpId+"\n");
+          console.log("Found the new keys to store in database for SDP ID "+sdpId+"\n");
         
-        db.query('UPDATE `sdp_members` SET `encrypt_key` = ?, `hmac_key` = ? WHERE `id` = ?', 
-          [newKeys.encryptionKey,
-           newKeys.hmacKey,
-           memberDetails.id],
-          function (error, rows, fields) 
-        {
-          if (error)
-          {
-            console.error("\nFailed when writing keys to database for SDP ID "+sdpId+"!\n");
-            console.error(error);
+        db.getConnection(function(error,connection){
+		      if(error){
+		        connection.release();
+	          console.error("Error connecting to database: " + error + "\n");
+	          //socket.end();
+	          return;
+		      }
+	        connection.query('UPDATE `sdp_members` SET `encrypt_key` = ?, `hmac_key` = ? WHERE `id` = ?', 
+	          [newKeys.encryptionKey,
+	           newKeys.hmacKey,
+	           memberDetails.id],
+          function (error, rows, fields){
+	          connection.release();
+	          if (error)
+	          {
+	            console.error("Failed when writing keys to database for SDP ID "+sdpId+"!\n");
+	            console.error(error);
+	
+	          } else {
+	            console.log("Successfully stored new keys for SDP ID "+sdpId+" in the database\n");
+	          }
+	
+	          newKeys = null;
+	          clearStateVars();
+	          if(!config.keepClientsConnected) socket.end();
 
-          } else {
-            console.log("\nSuccessfully stored new keys for SDP ID "+sdpId+" in the database\n");
-          }
-
-          newKeys = null;
-          clearStateVars();
-          if(!config.keepClientsConnected) socket.end();
-
-        });
+          });
+          
+	        connection.on('error', function(error) {
+	          console.error("Error from database connection: " + error + "\n");
+	          socket.end();
+	          return;
+	        });
+          
+	      });
 
       } else {
-        console.error("\nDid not find keys to store in database for SDP ID "+sdpId+"!\n");
+        console.error("Did not find keys to store in database for SDP ID "+sdpId+"!\n");
         clearStateVars();
       }
     }
