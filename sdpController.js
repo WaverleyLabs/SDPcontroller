@@ -110,7 +110,8 @@ function startDbConnection() {
 
   db.connect(function(err) {
     if (err) throw err;
-    //console.log('connected as id ' + db.threadId);
+    if(config.debug)
+      console.log('connected to database as id ' + db.threadId);
     startServer();
   });
 
@@ -140,6 +141,9 @@ function startServer() {
   // Start a TLS Server
   var server = tls.createServer(options, function (socket) {
 
+    if(config.debug)
+      console.log("Socket connection started");
+
     var subject = null;
     var memberDetails = null;
     var dataTransmitTries = 0;
@@ -153,7 +157,6 @@ function startServer() {
     console.log("\nConnection from sdp ID " + sdpId);
 
     // Set the socket timeout to watch for inactivity
-    // This or the client-side keep-alive is not working as expected
     if(config.socketTimeout) 
       socket.setTimeout(config.socketTimeout, function() {
         console.error("\nConnection to SDP ID " + sdpId + " has timed out. Disconnecting.\n");
@@ -183,6 +186,9 @@ function startServer() {
           console.log("\nData for client is: ");
           console.log(memberDetails);
         }
+
+	// Send initial credential update
+        handleCredentialUpdate(null);
 
         // Handle incoming requests from members
         socket.on('data', function (data) {
@@ -265,8 +271,9 @@ function startServer() {
     }
 
     function handleCredentialUpdate(message) {
-      if (message['stage'] === 'requesting' ||
-          message['stage'] === 'unfulfilled')  {
+      if (!message ||
+           message['stage'] === 'requesting' ||
+           message['stage'] === 'unfulfilled')  {
 
         if ( checkAndHandleTooManyTransmitTries() )
           return;
