@@ -139,12 +139,13 @@ function startServer() {
     if(config.debug)
       console.log("Socket connection started");
 
-    var subject = null;
+    var action = null;
     var memberDetails = null;
     var dataTransmitTries = 0;
     var credentialMakerTries = 0;
     var badMessagesReceived = 0;
     var newKeys = null;
+    var accessRefreshDue = false;
     
     // Identify the connecting client or gateway
     var sdpId = socket.getPeerCertificate().subject.CN;
@@ -191,7 +192,14 @@ function startServer() {
           }
   
           // Send initial credential update
-          handleCredentialUpdate(null);
+          handleCredentialUpdate();
+          
+          // Set the global var to do this after
+          // the gate has acknowledged its new creds
+          if(memberDetails.type === 'gate') {
+            accessRefreshDue = true;
+          }
+          
   
           // Handle incoming requests from members
           socket.on('data', function (data) {
@@ -241,13 +249,17 @@ function startServer() {
           }
         }
         
-        subject = message['sdpSubject'];
-        if (subject === 'memberCredentialUpdate') {
-          handleCredentialUpdate(message);
-        } else if (subject === 'keepAlive') {
+        action = message['action'];
+        if (action === 'credential_update_request') {
+          handleCredentialUpdate();
+        } else if (action === 'credential_update_ack')  {
+          handleCredentialUpdateAck();
+        } else if (action === 'keep_alive') {
           handleKeepAlive();
+        } else if (action === 'access_ack') {
+          handleAccessAck();
         } else {
-          console.error("Invalid message received, invalid or missing sdpSubject");
+          console.error("Invalid message received, invalid or missing action");
           handleBadMessage(data.toString());
         }
         
@@ -260,9 +272,9 @@ function startServer() {
     }
 
     function handleKeepAlive() {
-      console.log("Received keepAlive request, responding now");
+      console.log("Received keep_alive request, responding now");
       var keepAliveMessage = {
-        sdpSubject: 'keepAlive'
+        action: 'keep_alive'
       };
       // For testing only, send a bunch of copies fast
       if (config.testManyMessages > 0) {
@@ -279,67 +291,136 @@ function startServer() {
 
     }
 
-    function handleCredentialUpdate(message) {
-      if (!message ||
-           message['stage'] === 'requesting' ||
-           message['stage'] === 'unfulfilled')  {
 
-        if ( checkAndHandleTooManyTransmitTries() )
-          return;
-
-
-        // get the credentials
-        myCredentialMaker.getNewCredentials(memberDetails, function(err, data){
-          if (err) {
-            
-            credentialMakerTries++;
-            
-            if ( checkAndHandleTooManyCredMakerTries() )
-              return;
-
-            // otherwise, just notify requestor of error
-            var credErrMessage = {
-              sdpSubject: 'memberCredentialUpdate',
-              stage: 'error',
-              data: 'Failed to generate new credentials'
-            };
-
-            console.log("Sending memberCredentialUpdate error message to SDP ID " + memberDetails.id + ", failed attempt: " + credentialMakerTries);
-            socket.write(JSON.stringify(credErrMessage));
-
-          } else {
-            // got credentials, send them over
-            var newCredMessage = {
-              sdpSubject: 'memberCredentialUpdate',
-              stage: 'fulfilling',
-              data
-            };
-            
-            newKeys = {
-              encryptionKey: data.encryptionKey,
-              hmacKey: data.hmacKey
-            };
-
-            console.log("Sending memberCredentialUpdate fulfilling message to SDP ID " + memberDetails.id + ", attempt: " + dataTransmitTries);
-            dataTransmitTries++;
-            socket.write(JSON.stringify(newCredMessage));
-
-          }
-
-        });
-       
-      } else if (message['stage'] === 'fulfilled')  {
-        console.log("Received acknowledgement from requestor, data successfully delivered");
-
-        // store the necessary info in the database
-        storeKeysInDatabase();
-
-      } else {
-        // unrecognized message
-        handleBadMessage(JSON.stringify(message));
-      }
+    function handleCredentialUpdate() {
+      if ( checkAndHandleTooManyTransmitTries() )
+        return;
+  
+      // get the credentials
+      myCredentialMaker.getNewCredentials(memberDetails, function(err, data){
+        if (err) {
           
-    }  // END FUNCTION handleCredentialUpdate
+          credentialMakerTries++;
+          
+          if ( checkAndHandleTooManyCredMakerTries() )
+            return;
+  
+          // otherwise, just notify requestor of error
+          var credErrMessage = {
+            action: 'credential_update_error',
+            data: 'Could not generate new credentials',
+          };
+  
+          console.log("Sending credential_update_error message to SDP ID " + memberDetails.id + ", failed attempt: " + credentialMakerTries);
+          socket.write(JSON.stringify(credErrMessage));
+  
+        } else {
+          // got credentials, send them over
+          var newCredMessage = {
+            action: 'credential_update',
+            data
+          };
+          
+          newKeys = {
+            encryptionKey: data.encryptionKey,
+            hmacKey: data.hmacKey
+          };
+  
+          console.log("Sending credential_update message to SDP ID " + memberDetails.id + ", attempt: " + dataTransmitTries);
+          dataTransmitTries++;
+          socket.write(JSON.stringify(newCredMessage));
+  
+        }
+  
+      });
+    } // END FUNCTION handleCredentialUpdate
+    
+    
+    function handleCredentialUpdateAck()  {
+      console.log("Received acknowledgement from requestor, data successfully delivered");
+
+      // store the necessary info in the database
+      storeKeysInDatabase();
+
+    }  // END FUNCTION handleCredentialUpdateAck
+
+
+    function PostStoreKeysCallback(error) {
+      if(memberDetails.type === 'client') {
+        notifyGateways(error);
+      } else {
+        handleAccessRefresh(error);
+      }
+    }  // END FUNCTION PostStoreKeysCallback
+
+
+    function notifyGateways(error) {
+      if ( error ) {
+        console.error("Not performing gateway notification for SDP ID " 
+                       + memberDetails.id + " due to previous error");
+        return;
+      }
+      
+      // TODO notify gateways
+      
+      // only after successful notification
+      if(!config.keepClientsConnected) socket.end();
+
+    } // END FUNCTION notifyGateways
+    
+    
+    function handleAccessRefresh(error) {
+      if ( !accessRefreshDue )
+        return;
+        
+      if ( error ) {
+        console.error("Not performing access refresh for SDP ID "
+                       + memberDetails.id + " due to previous error");
+        return;
+      }
+      
+      if ( checkAndHandleTooManyTransmitTries() )
+        return;
+
+
+      // get the access data, MAKING IT UP FOR NOW
+      var data = [
+        {
+            sdp_client_id: 33333,
+            source: "192.168.0.0/16",
+            open_ports: "tcp/80, tcp/1398, tcp/443, tcp/5000",
+            key_base64: "BUajKbdZ4X6ssMODIKSgCxjKoxlByPjsw+/FKpWD7Wk=",
+            hmac_key_base64: "BodzNUM5tLlwTQOAopHQs3XpEKnE1sbLOfsvHNycNMbJEtYvh7AXV8bNtbdpvDfhV3aAGurP8Er0epPVMw6IHQ=="
+        },
+        {
+            sdp_client_id: 44444,
+            source: "192.168.0.0/16",
+            open_ports: "tcp/81",
+            key_base64: "aldskfjasldfjaddslfjalsdfjalddsfjasdlfjasdld",
+            hmac_key_base64: "aldskfjasldfjaddslfjalsdfjalddsfjasdlfjasdldEtYvh7AXV8bNtbdpvDfhV3aAGurP8Er0epPVMw6IHQ=="
+        }
+      ];
+
+      // got credentials, send them over
+      var accessMessage = {
+        action: 'access_refresh',
+        data
+      };
+      
+      console.log("Sending access_refresh message to SDP ID " + memberDetails.id + ", attempt: " + dataTransmitTries);
+      dataTransmitTries++;
+      accessRefreshDue = false;
+      socket.write(JSON.stringify(accessMessage));
+
+    }  // END FUNCTION handleAccessRefresh
+
+
+    function handleAccessAck()  {
+      console.log("Received access data acknowledgement from requestor, data successfully delivered");
+
+      clearStateVars();
+
+    }  // END FUNCTION handleAccessAck
 
 
     // store generated keys in database
@@ -354,7 +435,7 @@ function startServer() {
           if(error){
             connection.release();
             console.error("Error connecting to database: " + error);
-            //socket.end();
+            PostStoreKeysCallback(error);
             return;
           }
           connection.query('UPDATE `sdp_members` SET `encrypt_key` = ?, `hmac_key` = ? WHERE `id` = ?', 
@@ -367,15 +448,13 @@ function startServer() {
             {
               console.error("Failed when writing keys to database for SDP ID "+sdpId);
               console.error(error);
-  
             } else {
               console.log("Successfully stored new keys for SDP ID "+sdpId+" in the database");
             }
-  
+
             newKeys = null;
             clearStateVars();
-            if(!config.keepClientsConnected) socket.end();
-
+            PostStoreKeysCallback(error);
           });
           
           connection.on('error', function(error) {
@@ -395,7 +474,7 @@ function startServer() {
 
     // clear all state variables
     function clearStateVars() {
-      subject = null;
+      action = null;
       dataTransmitTries = 0;
       credentialMakerTries = 0;
       badMessagesReceived = 0;
@@ -440,8 +519,7 @@ function startServer() {
 
         console.error("Preparing badMessage message...");
         var badMessageMessage = {
-          sdpSubject: 'badMessage',
-          stage: 'error',
+          action: 'bad_message',
           data: badMessage
         };
 
