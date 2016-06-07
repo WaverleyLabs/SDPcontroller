@@ -322,8 +322,8 @@ function startServer() {
           };
           
           newKeys = {
-            encryptionKey: data.encryptionKey,
-            hmacKey: data.hmacKey
+            encryption_key: data.encryption_key,
+            hmac_key: data.hmac_key
           };
   
           console.log("Sending credential_update message to SDP ID " + memberDetails.id + ", attempt: " + dataTransmitTries);
@@ -425,8 +425,8 @@ function startServer() {
 
     // store generated keys in database
     function storeKeysInDatabase() {
-      if (newKeys.hasOwnProperty('encryptionKey') && 
-          newKeys.hasOwnProperty('hmacKey')) 
+      if (newKeys.hasOwnProperty('encryption_key') && 
+          newKeys.hasOwnProperty('hmac_key')) 
       {
         if(config.debug)
           console.log("Found the new keys to store in database for SDP ID "+sdpId);
@@ -439,8 +439,8 @@ function startServer() {
             return;
           }
           connection.query('UPDATE `sdp_members` SET `encrypt_key` = ?, `hmac_key` = ? WHERE `id` = ?', 
-            [newKeys.encryptionKey,
-             newKeys.hmacKey,
+            [newKeys.encryption_key,
+             newKeys.hmac_key,
              memberDetails.id],
           function (error, rows, fields){
             connection.release();

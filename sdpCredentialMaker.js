@@ -70,10 +70,10 @@ credentialMaker.prototype.getNewCredentials =	function(memberDetails, callback) 
     console.log("New credentials successfully created, transmitting to sdp member " + memberDetails.id);
     
     var credentials = {
-      encryptionKey: creds.encryptionKey,
-      hmacKey: creds.hmacKey,
-      tlsClientKey: creds.cert.clientKey,
-      tlsClientCert: creds.cert.certificate
+      encryption_key: creds.encryptionKey,
+      hmac_key: creds.hmacKey,
+      tls_client_key: creds.cert.clientKey,
+      tls_client_cert: creds.cert.certificate
     };
 
     callback(null, credentials);
