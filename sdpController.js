@@ -293,8 +293,14 @@ function startServer() {
 
 
     function handleCredentialUpdate() {
-      if ( checkAndHandleTooManyTransmitTries() )
-        return;
+      if (dataTransmitTries >= config.maxDataTransmitTries) {
+	    // Data transmission has failed
+	    console.error("Data transmission to SDP ID " + memberDetails.id + 
+	      " has failed after " + (dataTransmitTries+1) + " attempts");
+	    console.error("Closing connection");
+	    socket.end();
+	    return;
+      }
   
       // get the credentials
       myCredentialMaker.getNewCredentials(memberDetails, function(err, data){
@@ -302,8 +308,14 @@ function startServer() {
           
           credentialMakerTries++;
           
-          if ( checkAndHandleTooManyCredMakerTries() )
+          if (credentialMakerTries > config.maxCredentialMakerTries) {
+            // Credential making has failed
+            console.error("Failed to make credentials for SDP ID " + memberDetails.id +
+                      " " + credentialMakerTries + " times.");
+            console.error("Closing connection");
+            socket.end();
             return;
+          }
   
           // otherwise, just notify requestor of error
           var credErrMessage = {
@@ -379,8 +391,14 @@ function startServer() {
         return;
       }
       
-      if ( checkAndHandleTooManyTransmitTries() )
+      if (dataTransmitTries >= config.maxDataTransmitTries) {
+        // Data transmission has failed
+        console.error("Data transmission to SDP ID " + memberDetails.id + 
+          " has failed after " + (dataTransmitTries+1) + " attempts");
+        console.error("Closing connection");
+        socket.end();
         return;
+      }
 
 
       // get the access data, MAKING IT UP FOR NOW
@@ -481,34 +499,6 @@ function startServer() {
     }
 
 
-    // Watch count of transmission attempts
-    function checkAndHandleTooManyTransmitTries() {
-      if (dataTransmitTries+1 < config.maxDataTransmitTries)
-        return false;
-
-      // Data transmission has failed
-      console.error("Data transmission to SDP ID " + memberDetails.id + 
-        " has failed after " + (dataTransmitTries+1) + " attempts");
-      console.error("Closing connection");
-      clearStateVars();
-      socket.end();
-      return true;
-    }
-
-    // Watch count of credentialMaker attempts
-    function checkAndHandleTooManyCredMakerTries() {
-      if (credentialMakerTries < config.maxCredentialMakerTries)
-        return false;
-
-      // Credential making has failed
-      console.error("Failed to make credentials for SDP ID " + memberDetails.id +
-                " " + credentialMakerTries + " times.");
-      console.error("Closing connection");
-      clearStateVars();
-      socket.end();
-      return true;
-    }
-
     // deal with receipt of bad messages
     function handleBadMessage(badMessage) {
       badMessagesReceived++;
@@ -534,7 +524,6 @@ function startServer() {
         console.error("Received " + badMessagesReceived + " badly formed messages from SDP ID " +
           sdpId);
         console.error("Closing connection");
-        clearStateVars();
         socket.end();
       }
     }
