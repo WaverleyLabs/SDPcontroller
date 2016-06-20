@@ -150,7 +150,7 @@ function startServer() {
     // Identify the connecting client or gateway
     var sdpId = socket.getPeerCertificate().subject.CN;
 
-    console.log("Connection from sdp ID " + sdpId);
+    console.log("Connection from SDP ID " + sdpId);
 
     // Set the socket timeout to watch for inactivity
     if(config.socketTimeout) 
@@ -159,6 +159,19 @@ function startServer() {
         socket.end();
       });
 
+    // Handle incoming requests from members
+    socket.on('data', function (data) {
+      processMessage(data);
+    });
+  
+    socket.on('end', function () {
+      console.log("Connection to SDP ID " + sdpId + " closed.");
+    });
+  
+    socket.on('error', function (error) {
+      console.error(error);
+    });
+  
     // Find sdpId in the database
     db.getConnection(function(error,connection){
       if(error){
@@ -167,21 +180,19 @@ function startServer() {
         socket.end();
         return;
       }
-      connection.query('SELECT * FROM `sdp_members` WHERE `id` = ?', [sdpId], 
+      connection.query('SELECT * FROM `sdpid` WHERE `id` = ?', [sdpId], 
       function (error, rows, fields) {
         connection.release();
         if (error) {
           console.error("Query returned error: " + error);
           console.error(error);
-          console.error("SDP ID unrecognized. Disconnecting.");
-          socket.end();
+          socket.end(JSON.stringify({action: 'database_error'}));
         } else if (rows.length < 1) {
-          console.error("SDP ID not found, disconnecting");
-          socket.end();
+          console.error("SDP ID not found, notifying and disconnecting");
+          socket.end(JSON.stringify({action: 'unknown_sdp_id'}));
         } else if (rows.length > 1) {
-            // Fatal error, should not be possible to find more than
-            // one instance of an ID
-            throw new sdpQueryException(sdpId, rows.length);
+          console.error("Query returned multiple rows for SDP ID: " + sdpId);
+          socket.end(JSON.stringify({action: 'database_error'}));
         } else {
   
           memberDetails = rows[0];
@@ -191,29 +202,14 @@ function startServer() {
             console.log(memberDetails);
           }
   
-          // Send initial credential update
-          handleCredentialUpdate();
-          
-          // Set the global var to do this after
-          // the gate has acknowledged its new creds
-          if(memberDetails.type === 'gate') {
-            accessRefreshDue = true;
+          // possibly send credential update
+          var now = new Date();
+          if(now > memberDetails.cred_update_due) {
+            handleCredentialUpdate();
+          } else {
+            socket.write(JSON.stringify({action: 'credentials_good'}));
           }
           
-  
-          // Handle incoming requests from members
-          socket.on('data', function (data) {
-            processMessage(data);
-          });
-  
-          socket.on('end', function () {
-            console.log("Connection to SDP ID " + sdpId + " closed.");
-          });
-  
-          socket.on('error', function (error) {
-            console.error(error);
-          });
-  
         }  
   
       });
@@ -228,49 +224,60 @@ function startServer() {
 
     // Parse SDP messages 
     function processMessage(data) {
+      if(config.debug) {
+        console.log("Message Data Received: ");
+        console.log(data.toString());
+      }
+
+      // Ignore message if not yet ready
+      // Clients are not supposed to send the first message
+      if(!memberDetails){
+        console.log("Ignoring premature message.");
+        return;
+      }
+      
       try {
-        if(config.debug) {
-          console.log("Message Data Received: ");
-          console.log(data.toString());
-        }
-
         var message = JSON.parse(data);
-
-        if(config.debug) {
-          console.log("Message parsed");
-        }
-
-        console.log("Message received from SDP ID " + memberDetails.id);
-
-        if(config.debug) {
-          console.log("JSON-Parsed Message Data Received: ");
-          for(var myKey in message) {
-            console.log("key: " + myKey + "   value: " + message[myKey]);
-          }
-        }
-        
-        action = message['action'];
-        if (action === 'credential_update_request') {
-          handleCredentialUpdate();
-        } else if (action === 'credential_update_ack')  {
-          handleCredentialUpdateAck();
-        } else if (action === 'keep_alive') {
-          handleKeepAlive();
-        } else if (action === 'access_ack') {
-          handleAccessAck();
-        } else {
-          console.error("Invalid message received, invalid or missing action");
-          handleBadMessage(data.toString());
-        }
-        
       }
       catch (err) {
-        console.error("Error processing received data:");
-        console.error(data.toString());
+        console.error("Error processing the following received data: \n" + data.toString());
+        console.error("JSON parse failed with error: " + err);
+        handleBadMessage(data.toString());
+        return;
+      }
+
+      if(config.debug) {
+        console.log("Message parsed");
+      }
+
+      console.log("Message received from SDP ID " + memberDetails.id);
+
+      if(config.debug) {
+        console.log("JSON-Parsed Message Data Received: ");
+        for(var myKey in message) {
+          console.log("key: " + myKey + "   value: " + message[myKey]);
+        }
+      }
+      
+      action = message['action'];
+      if (action === 'credential_update_request') {
+        handleCredentialUpdate();
+      } else if (action === 'credential_update_ack')  {
+        handleCredentialUpdateAck();
+      } else if (action === 'keep_alive') {
+        handleKeepAlive();
+      } else if (action === 'access_refresh_request') {
+        handleAccessRefresh();
+      } else if (action === 'access_update_request') {
+        handleAccessUpdate(message);
+      } else if (action === 'access_ack') {
+        handleAccessAck();
+      } else {
+        console.error("Invalid message received, invalid or missing action");
         handleBadMessage(data.toString());
       }
-    }
-
+    }    
+    
     function handleKeepAlive() {
       console.log("Received keep_alive request, responding now");
       var keepAliveMessage = {
@@ -294,12 +301,12 @@ function startServer() {
 
     function handleCredentialUpdate() {
       if (dataTransmitTries >= config.maxDataTransmitTries) {
-	    // Data transmission has failed
-	    console.error("Data transmission to SDP ID " + memberDetails.id + 
-	      " has failed after " + (dataTransmitTries+1) + " attempts");
-	    console.error("Closing connection");
-	    socket.end();
-	    return;
+        // Data transmission has failed
+        console.error("Data transmission to SDP ID " + memberDetails.id + 
+          " has failed after " + (dataTransmitTries+1) + " attempts");
+        console.error("Closing connection");
+        socket.end();
+        return;
       }
   
       // get the credentials
@@ -333,9 +340,19 @@ function startServer() {
             data
           };
           
+          var updated = new Date();
+          var expires = new Date();
+          expires.setDate(expires.getDate() + config.daysToExpiration);
+          expires.setHours(0);
+          expires.setMinutes(0);
+          expires.setSeconds(0);
+          expires.setMilliseconds(0);
+          
           newKeys = {
             encryption_key: data.encryption_key,
-            hmac_key: data.hmac_key
+            hmac_key: data.hmac_key,
+            updated,
+            expires
           };
   
           console.log("Sending credential_update message to SDP ID " + memberDetails.id + ", attempt: " + dataTransmitTries);
@@ -357,13 +374,11 @@ function startServer() {
     }  // END FUNCTION handleCredentialUpdateAck
 
 
-    function PostStoreKeysCallback(error) {
+    function postStoreKeysCallback(error) {
       if(memberDetails.type === 'client') {
         notifyGateways(error);
-      } else {
-        handleAccessRefresh(error);
       }
-    }  // END FUNCTION PostStoreKeysCallback
+    }  // END FUNCTION postStoreKeysCallback
 
 
     function notifyGateways(error) {
@@ -381,58 +396,118 @@ function startServer() {
     } // END FUNCTION notifyGateways
     
     
-    function handleAccessRefresh(error) {
-      if ( !accessRefreshDue )
-        return;
-        
-      if ( error ) {
-        console.error("Not performing access refresh for SDP ID "
-                       + memberDetails.id + " due to previous error");
-        return;
-      }
-      
-      if (dataTransmitTries >= config.maxDataTransmitTries) {
-        // Data transmission has failed
-        console.error("Data transmission to SDP ID " + memberDetails.id + 
-          " has failed after " + (dataTransmitTries+1) + " attempts");
-        console.error("Closing connection");
-        socket.end();
-        return;
-      }
-
-
-      // get the access data, MAKING IT UP FOR NOW
-      var data = [
-        {
-            sdp_client_id: 33333,
-            source: "192.168.0.0/16",
-            open_ports: "tcp/80, tcp/1398, tcp/443, tcp/5000",
-            key_base64: "BUajKbdZ4X6ssMODIKSgCxjKoxlByPjsw+/FKpWD7Wk=",
-            hmac_key_base64: "BodzNUM5tLlwTQOAopHQs3XpEKnE1sbLOfsvHNycNMbJEtYvh7AXV8bNtbdpvDfhV3aAGurP8Er0epPVMw6IHQ=="
-        },
-        {
-            sdp_client_id: 44444,
-            source: "192.168.0.0/16",
-            open_ports: "tcp/81",
-            key_base64: "aldskfjasldfjaddslfjalsdfjalddsfjasdlfjasdld",
-            hmac_key_base64: "aldskfjasldfjaddslfjalsdfjalddsfjasdlfjasdldEtYvh7AXV8bNtbdpvDfhV3aAGurP8Er0epPVMw6IHQ=="
+    function handleAccessRefresh() {
+        if (dataTransmitTries >= config.maxDataTransmitTries) {
+            // Data transmission has failed
+            console.error("Data transmission to SDP ID " + memberDetails.id + 
+              " has failed after " + (dataTransmitTries+1) + " attempts");
+            console.error("Closing connection");
+            socket.end();
+            return;
         }
-      ];
 
-      // got credentials, send them over
-      var accessMessage = {
-        action: 'access_refresh',
-        data
-      };
+        db.getConnection(function(error,connection){
+            if(error){
+                connection.release();
+                console.error("Error connecting to database: " + error);
+                
+                // notify the requestor of our database troubles
+                socket.write(
+                    JSON.stringify({
+                        action: 'access_refresh_error',
+                        data: 'Database unreachable. Try again soon.'
+                    })
+                );
+                
+                return;
+            }
+            
+            connection.query(
+                'SELECT ' +
+                '    `sdpid_service`.`sdpid_id`,  ' +
+                '    `service_gateway`.`protocol_port`, ' +
+                '    `sdpid`.`encrypt_key`,  ' +
+                '    `sdpid`.`hmac_key` ' +
+                'FROM `gateway` ' +
+                '    JOIN `service_gateway` ' +
+                '        ON `service_gateway`.`gateway_id` = `gateway`.`id` ' +
+                '    JOIN `sdpid_service` ' +
+                '        ON `sdpid_service`.`service_id` = `service_gateway`.`service_id` ' +
+                '    JOIN `sdpid` ' +
+                '        ON `sdpid`.`id` = `sdpid_service`.`sdpid_id` ' +
+                'WHERE `gateway`.`sdpid_id` = ? ' +
+                'ORDER BY `sdpid_id` ',
+                [memberDetails.id],
+                function (error, rows, fields) {
+                    connection.release();
+                    if(error) {
+                        console.error("Access data query returned error: " + error);
+                        socket.write(
+                            JSON.stringify({
+                                action: 'access_refresh_error',
+                                data: 'Database error. Try again soon.'
+                            })
+                        );
+                        return;
+                    }
+                    
+                    var data = [];
+                    var dataIdx = 0;
+                    var currentSdpId = 0;
+                    for(var rowIdx = 0; rowIdx < rows.length; rowIdx++) {
+                        var thisRow = rows[rowIdx];
+                        dataIdx = data.length - 1;
+                        if(thisRow.sdpid_id != currentSdpId) {
+                            currentSdpId = thisRow.sdpid_id;
+                            data.push({
+                                sdp_client_id: thisRow.sdpid_id,
+                                source: "ANY",
+                                open_ports: thisRow.protocol_port,
+                                key_base64: thisRow.encrypt_key,
+                                hmac_key_base64: thisRow.hmac_key
+                            });
+                        } else {
+                            data[dataIdx].open_ports += ", " + thisRow.protocol_port;
+                        }
+                    }
+                    
+                    if(config.debug) {
+                        console.log("Access refresh data to send: \n" + data);
+                    }
+                    
+                    console.log("Sending access_refresh message to SDP ID " + 
+                        memberDetails.id + ", attempt: " + dataTransmitTries);
+                    dataTransmitTries++;
+            
+                    socket.write(
+                        JSON.stringify({
+                            action: 'access_refresh',
+                            data
+                        })
+                    );
+                    
+                } // END QUERY CALLBACK FUNCTION
+
+            );  // END QUERY DEFINITION
       
-      console.log("Sending access_refresh message to SDP ID " + memberDetails.id + ", attempt: " + dataTransmitTries);
-      dataTransmitTries++;
-      accessRefreshDue = false;
-      socket.write(JSON.stringify(accessMessage));
-
+            connection.on('error', function(error) {
+                console.error("Error from database connection: " + error);
+                return;
+            });
+            
+        });  // END DATABASE CONNECTION CALLBACK
+        
     }  // END FUNCTION handleAccessRefresh
+    
+    
+    
 
-
+    function handleAccessUpdate(message) {
+      //TODO
+      
+    }
+    
+    
     function handleAccessAck()  {
       console.log("Received access data acknowledgement from requestor, data successfully delivered");
 
@@ -453,12 +528,17 @@ function startServer() {
           if(error){
             connection.release();
             console.error("Error connecting to database: " + error);
-            PostStoreKeysCallback(error);
+            postStoreKeysCallback(error);
             return;
           }
-          connection.query('UPDATE `sdp_members` SET `encrypt_key` = ?, `hmac_key` = ? WHERE `id` = ?', 
+          connection.query(
+            'UPDATE `sdpid` SET ' +
+            '`encrypt_key` = ?, `hmac_key` = ?, ' +
+            '`last_cred_update` = ?, `cred_update_due` = ? WHERE `id` = ?', 
             [newKeys.encryption_key,
              newKeys.hmac_key,
+             newKeys.updated,
+             newKeys.expires,
              memberDetails.id],
           function (error, rows, fields){
             connection.release();
@@ -472,7 +552,7 @@ function startServer() {
 
             newKeys = null;
             clearStateVars();
-            PostStoreKeysCallback(error);
+            postStoreKeysCallback(error);
           });
           
           connection.on('error', function(error) {
