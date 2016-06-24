@@ -55,5 +55,8 @@ module.exports = {
     // disconnects from the client
     'maxDataTransmitTries': 3,
     'maxCredentialMakerTries': 3,
-    'maxBadMessages': 3
+    'maxBadMessages': 3,
+    
+    // retry interval (milliseconds) for database failures
+    'databaseRetryInterval': 5000
 };

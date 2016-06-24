@@ -16,6 +16,8 @@ var db;
 var dbPassword = config.dbPassword;
 var serverKeyPassword = config.serverKeyPassword;
 var myCredentialMaker = new credentialMaker(config);
+var connectedGateways = [];
+var connectedClients  = [];
 
 
 // check a couple config settings
@@ -148,7 +150,7 @@ function startServer() {
     var accessRefreshDue = false;
     
     // Identify the connecting client or gateway
-    var sdpId = socket.getPeerCertificate().subject.CN;
+    var sdpId = parseInt(socket.getPeerCertificate().subject.CN);
 
     console.log("Connection from SDP ID " + sdpId);
 
@@ -166,6 +168,7 @@ function startServer() {
   
     socket.on('end', function () {
       console.log("Connection to SDP ID " + sdpId + " closed.");
+      removeFromConnectionList(memberDetails);
     });
   
     socket.on('error', function (error) {
@@ -177,7 +180,7 @@ function startServer() {
       if(error){
         connection.release();
         console.error("Error connecting to database: " + error);
-        socket.end();
+        socket.end(JSON.stringify({action: 'database_error'}));
         return;
       }
       connection.query('SELECT * FROM `sdpid` WHERE `id` = ?', [sdpId], 
@@ -196,8 +199,26 @@ function startServer() {
         } else {
   
           memberDetails = rows[0];
+          
+          
+          // add the connection to the appropriate list
+          if(memberDetails.type === 'gateway') {
+              connectedGateways.push({
+                  sdpId: memberDetails.id,
+                  connectionTime: new Date(),
+                  socket
+              });
+          } else {
+              connectedClients.push({
+                  sdpId: memberDetails.id,
+                  connectionTime: new Date(),
+                  socket
+              });
+          }
   
           if (config.debug) {
+            console.log("Connected gateways: \n", connectedGateways, "\n");
+            console.log("Connected clients: \n", connectedClients, "\n");
             console.log("Data for client is: ");
             console.log(memberDetails);
           }
@@ -216,12 +237,12 @@ function startServer() {
       
       connection.on('error', function(error) {
         console.error("Error from database connection: " + error);
-        socket.end();
         return;
       });
       
     });
 
+    
     // Parse SDP messages 
     function processMessage(data) {
       if(config.debug) {
@@ -319,8 +340,8 @@ function startServer() {
             // Credential making has failed
             console.error("Failed to make credentials for SDP ID " + memberDetails.id +
                       " " + credentialMakerTries + " times.");
-            console.error("Closing connection");
-            socket.end();
+            //console.error("Closing connection");
+            //socket.end();
             return;
           }
   
@@ -376,24 +397,196 @@ function startServer() {
 
     function postStoreKeysCallback(error) {
       if(memberDetails.type === 'client') {
-        notifyGateways(error);
+        notifyGateways();
       }
     }  // END FUNCTION postStoreKeysCallback
 
 
-    function notifyGateways(error) {
-      if ( error ) {
-        console.error("Not performing gateway notification for SDP ID " 
-                       + memberDetails.id + " due to previous error");
-        return;
-      }
-      
-      // TODO notify gateways
-      
-      // only after successful notification
-      if(!config.keepClientsConnected) socket.end();
+    function notifyGateways() {
+        // get database connection
+        db.getConnection(function(error,connection){
+            if(error){
+                connection.release();
+                console.error("Error connecting to database in preparation " + 
+                              "to notify gateways of a client's credential update: " + error);
+                
+                // notify the requestor of our database troubles
+                socket.write(
+                    JSON.stringify({
+                        action: 'notify_gateways_error',
+                        data: 'Database unreachable. Gateways not notified of credential update.'
+                    })
+                );
+                
+                return;
+            }
+            
+            // this next query requires a simple array of only
+            // the sdp ids listed in connectedGateways
+            var gatewaySdpIdList = [];
+            for(var idx = 0; idx < connectedGateways.length; idx++) {
+                gatewaySdpIdList.push(connectedGateways[idx].sdpId);
+            }
+            
+            connection.query(
+                'SELECT ' +
+                '    `gateway`.`sdpid_id`,  ' +
+                '    `service_gateway`.`protocol_port`, ' +
+                '    `sdpid`.`encrypt_key`,  ' +
+                '    `sdpid`.`hmac_key` ' +
+                'FROM `gateway` ' +
+                '    JOIN `service_gateway` ' +
+                '        ON `service_gateway`.`gateway_id` = `gateway`.`id` ' +
+                '    JOIN `sdpid_service` ' +
+                '        ON `sdpid_service`.`service_id` = `service_gateway`.`service_id` ' +
+                '    JOIN `sdpid` ' +
+                '        ON `sdpid`.`id` = `sdpid_service`.`sdpid_id` ' +
+                'WHERE `gateway`.`sdpid_id` IN (?) ' +
+                'AND `sdpid`.`id` = ? ' +
+                'ORDER BY `sdpid_id` ',
+                [gatewaySdpIdList, memberDetails.id],
+                function (error, rows, fields) {
+                    connection.release();
+                    if(error) {
+                        console.error("Access data query returned error: " + error);
+                        socket.write(
+                            JSON.stringify({
+                                action: 'notify_gateways_error',
+                                data: 'Database error. Gateways not notified of credential update.'
+                            })
+                        );
+                        return;
+                    }
+                    
+                    if(rows.length == 0) {
+                        console.log("No relevant gateways to notify regarding credential update to SDP ID "+memberDetails.id);
+                        return;
+                    }
+                    
+                    var thisRow = rows[0];
+                    var currentGatewaySdpId = thisRow.sdpid_id;
+                    var openPorts = thisRow.protocol_port;
+                    var encryptKey = thisRow.encrypt_key;
+                    var hmacKey = thisRow.hmac_key;
+                    
+                    for(var rowIdx = 0; rowIdx < rows.length; rowIdx++) {
+                        thisRow = rows[rowIdx];
+                        
+                        if(thisRow.sdpid_id != currentGatewaySdpId) {
+                            currentGatewaySdpId = thisRow.sdpid_id;
+                            openPorts = thisRow.protocol_port;
+                            encryptKey = thisRow.encrypt_key;
+                            hmacKey = thisRow.hmac_key;
+                        } else if(rowIdx != 0) {
+                            openPorts += ", " + thisRow.protocol_port;
+                        }
+                        
+                        // if this is the last data row or the next is a different gateway
+                        if( (rowIdx + 1) == rows.length || 
+                            rows[rowIdx + 1].sdpid_id != currentGatewaySdpId ) {
+                            
+                            // send off this stanza data
+                            notifyGateway(currentGatewaySdpId, 
+                                          memberDetails.id,
+                                          openPorts, 
+                                          encryptKey,
+                                          hmacKey);
+                        }
+                    }
+                    
+			        // only after successful notification
+			        if(memberDetails.type === 'client' &&
+			           !config.keepClientsConnected) 
+			        {
+			            socket.end();
+			        }
+			
 
+                } // END QUERY CALLBACK FUNCTION
+
+            );  // END QUERY DEFINITION
+      
+            connection.on('error', function(error) {
+                console.error("Error from database connection: " + error);
+                return;
+            });
+            
+        });  // END DATABASE CONNECTION CALLBACK
+                
     } // END FUNCTION notifyGateways
+    
+
+    function notifyGateway(gatewaySdpId, clientSdpId, openPorts, encKey, hmacKey) {
+
+        var gatewaySocket = null;
+        
+        // get the right socket
+        for(var idx = 0; idx < connectedGateways.length; idx++) {
+            if(connectedGateways[idx].sdpId == gatewaySdpId) {
+                gatewaySocket = connectedGateways[idx].socket;
+                break;
+            }
+        }
+        
+        debugger;
+        
+        if(!gatewaySocket) {
+            console.log("Attempted to notify gateway with SDP ID " +gatewaySdpId+
+                        " of a client's updated credentials, but socket not found.");
+            return;
+        }
+
+        var data = [{
+            sdp_client_id: clientSdpId,
+            source: "ANY",
+            open_ports: openPorts,
+            key_base64: encKey,
+            hmac_key_base64: hmacKey
+        }];
+        
+        if(config.debug) {
+            console.log("Access update data to send to "+gatewaySdpId+": \n", data);
+        }
+        
+        console.log("Sending access_update message to SDP ID " + gatewaySdpId);
+
+        gatewaySocket.write(
+            JSON.stringify({
+                action: 'access_update',
+                data
+            })
+        );
+        
+        
+    } // END FUNCTION notifyGateway
+    
+    
+    function removeFromConnectionList(details) {
+        var theList = null;
+        var found = false;
+        
+        if(details.type === 'client') {
+            var theList = connectedClients;
+            console.log("Searching connected client list for SDP ID " + details.id);
+        } else {
+            var theList = connectedGateways;
+            console.log("Searching connected gateway list for SDP ID " + details.id);
+        }
+        
+        for(var idx = 0; idx < theList.length; idx++) {
+            if(theList[idx].sdpId == details.id) {
+                theList.splice(idx, 1);
+                found = true;
+                break;
+            }
+        }
+        
+        if(found) {
+            console.log("Found and removed SDP ID "+details.id+" from connection list");
+        } else {
+            console.log("Did not find SDP ID "+details.id+" in the connection list");
+        }
+    }
     
     
     function handleAccessRefresh() {
@@ -472,7 +665,7 @@ function startServer() {
                     }
                     
                     if(config.debug) {
-                        console.log("Access refresh data to send: \n" + data);
+                        console.log("Access refresh data to send: \n", data, "\n");
                     }
                     
                     console.log("Sending access_refresh message to SDP ID " + 
@@ -527,8 +720,11 @@ function startServer() {
         db.getConnection(function(error,connection){
           if(error){
             connection.release();
-            console.error("Error connecting to database: " + error);
-            postStoreKeysCallback(error);
+            console.error("Error connecting to database to store new keys for SDP ID "+sdpId);
+            console.error(error);
+            
+            // retry soon
+            setTimeout(storeKeysInDatabase, config.databaseRetryInterval);
             return;
           }
           connection.query(
@@ -546,18 +742,19 @@ function startServer() {
             {
               console.error("Failed when writing keys to database for SDP ID "+sdpId);
               console.error(error);
-            } else {
-              console.log("Successfully stored new keys for SDP ID "+sdpId+" in the database");
-            }
+              newKeys = null;
+              clearStateVars();
+              return;
+            } 
 
+            console.log("Successfully stored new keys for SDP ID "+sdpId+" in the database");
             newKeys = null;
             clearStateVars();
-            postStoreKeysCallback(error);
+            notifyGateways();
           });
           
           connection.on('error', function(error) {
             console.error("Error from database connection: " + error);
-            socket.end();
             return;
           });
           
