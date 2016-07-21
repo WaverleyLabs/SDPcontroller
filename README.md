@@ -43,7 +43,7 @@ To use this module:
     **NOTE** When creating client certificates, the 'common name' field 
     must be set to the SDP ID of that client. The SDP ID is a 32 bit
     unsigned integer, meaning it has a range from 1 to a very large 
-    number. You will be prompted for field among many others when 
+    number. You will be prompted for this field among many others when 
     running the shell script just mentioned.
 
 8.  Transfer the client certificate and key files (client.crt & 
