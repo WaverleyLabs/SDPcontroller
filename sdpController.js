@@ -2,9 +2,22 @@
 var tls    = require('tls');
 var fs     = require('fs');
 var mysql  = require("mysql");
-var config = require('./config'); // get our config file
 var credentialMaker = require('./sdpCredentialMaker');
 var prompt = require("prompt");
+
+// If the user specified the config path, get it
+if(process.argv.length > 2) {
+	try {
+	    var config = require(process.argv[2]);
+	} catch (e) {
+	    // It isn't accessible
+	    console.log("Did not find specified config file. Exiting");
+	    process.exit();
+	}
+} else {
+	var config = require('./config.js');
+}
+
 
 const encryptionKeyLenMin = 4;
 const encryptionKeyLenMax = 32;
@@ -71,7 +84,7 @@ function startController() {
 }
 
 function checkDbPassword() {
-  if(dbPassword)
+  if(dbPassword || !config.dbPasswordRequired)
     startDbPool();
   else
   {
@@ -102,14 +115,24 @@ function checkDbPassword() {
 
 function startDbPool() {
   // set up database pool
-  db = mysql.createPool({
-    connectionLimit: config.maxConnections,
-    host: config.dbHost,
-    user: config.dbUser,
-    password: dbPassword, //config.dbPassword,
-    database: config.dbName,
-    debug: false
-  });
+  if(config.dbPasswordRequired == false) {
+	  db = mysql.createPool({
+	    connectionLimit: config.maxConnections,
+	    host: config.dbHost,
+	    user: config.dbUser,
+	    database: config.dbName,
+	    debug: false
+      });
+  } else {
+	  db = mysql.createPool({
+	    connectionLimit: config.maxConnections,
+	    host: config.dbHost,
+	    user: config.dbUser,
+	    password: dbPassword, //config.dbPassword,
+	    database: config.dbName,
+	    debug: false
+	  });
+  }
 
   startServer();
 }

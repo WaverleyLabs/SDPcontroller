@@ -5,7 +5,7 @@ openssl genrsa -des3 -out ca.key 4096
 openssl req -new -x509 -days 365 -key ca.key -out ca.crt
 
 # Create the Server Key, CSR, and Certificate
-openssl genrsa -des3 -out server.key 1024
+openssl genrsa -out server.key 1024
 openssl req -new -key server.key -out server.csr
 
 # We're self signing our own server cert here.  This is a no-no in production.
