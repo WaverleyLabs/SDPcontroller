@@ -88,7 +88,7 @@ credentialMaker.prototype.getNewCredentials =	function(memberDetails, callback) 
   });
 
   promiseNewCreds.then( function(creds) {
-    console.log("New credentials successfully created, transmitting to sdp member " + memberDetails.id);
+    console.log("New credentials successfully created for sdp member " + memberDetails.id);
     
     var credentials = {
       encryption_key: creds.encryptionKey,
