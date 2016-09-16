@@ -5,8 +5,9 @@ module.exports = {
 	'serverPort': 5000,
 	'maxConnections': 100,
 
-	// 0 indicates no timeout
-	'socketTimeout': 0,
+	// milliseconds, 0 indicates no timeout
+	// this is controller's way of noticing a lost connection
+	'socketTimeout': 30000,
 
 	// false indicates the server should disconnect
 	// after a successful credential update
@@ -44,7 +45,6 @@ module.exports = {
 	// database options
 	'dbHost': 'localhost',
 	'dbUser': 'sdp_controller',
-	'dbPasswordRequired': true,
 
 	// to be prompted for a password, delete this field or
 	// set it to a null string using '' (that's 2 single 

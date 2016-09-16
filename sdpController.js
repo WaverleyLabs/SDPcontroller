@@ -52,6 +52,7 @@ var serverKeyPassword = config.serverKeyPassword;
 var myCredentialMaker = new credentialMaker(config);
 var connectedGateways = [];
 var connectedClients  = [];
+var nextConnectionId  = 1;
 
 
 // check a couple config settings
@@ -192,17 +193,22 @@ function startServer() {
     var badMessagesReceived = 0;
     var newKeys = null;
     var accessRefreshDue = false;
+    var connectionId = nextConnectionId;
+    if(Number.MAX_SAFE_INTEGER == connectionId)   // 9007199254740991
+        nextConnectionId = 1;
+    else
+        nextConnectionId += 1;
     
     // Identify the connecting client or gateway
     var sdpId = parseInt(socket.getPeerCertificate().subject.CN);
 
-    console.log("Connection from SDP ID " + sdpId);
+    console.log("Connection from SDP ID " + sdpId + ", connection ID " + connectionId);
 
     // Set the socket timeout to watch for inactivity
     if(config.socketTimeout) 
       socket.setTimeout(config.socketTimeout, function() {
-        console.error("Connection to SDP ID " + sdpId + " has timed out. Disconnecting.");
-        socket.end();
+        console.error("Connection to SDP ID " + sdpId + ", connection ID " + connectionId + " has timed out. Disconnecting.");
+        removeFromConnectionList(memberDetails, connectionId);
       });
 
     // Handle incoming requests from members
@@ -211,8 +217,8 @@ function startServer() {
     });
   
     socket.on('end', function () {
-      console.log("Connection to SDP ID " + sdpId + " closed.");
-      removeFromConnectionList(memberDetails);
+      console.log("Connection to SDP ID " + sdpId + ", connection ID " + connectionId + " closed.");
+      removeFromConnectionList(memberDetails, connectionId);
     });
   
     socket.on('error', function (error) {
@@ -266,18 +272,24 @@ function startServer() {
           // first ensure no duplicate connection entries are left around
           for(var idx = 0; idx < destList.length; idx++) {
               if(destList[idx].sdpId == memberDetails.id) {
+                  // this next call triggers socket.on('end'...
+                  // which removes the entry from the connection list
                   destList[idx].socket.end(
                       JSON.stringify({action: 'duplicate_connection'})
                   );
                   
-                  destList.splice(idx, 1);
-                  idx--;
+                  // the check above means there should never be more than 1 match
+                  // and letting the loop keep checking introduces race condition
+                  // because the .end callback also loops through the list
+                  // and will delete one list entry
+                  break;
               }
           }
           
           // now add the connection to the right list
           destList.push({
               sdpId: memberDetails.id,
+              connectionId: connectionId,
               connectionTime: new Date(),
               socket
           });
@@ -630,20 +642,20 @@ function startServer() {
     } // END FUNCTION notifyGateway
     
     
-    function removeFromConnectionList(details) {
+    function removeFromConnectionList(details, connectionId) {
         var theList = null;
         var found = false;
         
         if(details.type === 'client') {
             var theList = connectedClients;
-            console.log("Searching connected client list for SDP ID " + details.id);
+            console.log("Searching connected client list for SDP ID " + details.id + ", connection ID " + connectionId);
         } else {
             var theList = connectedGateways;
-            console.log("Searching connected gateway list for SDP ID " + details.id);
+            console.log("Searching connected gateway list for SDP ID " + details.id + ", connection ID " + connectionId);
         }
         
         for(var idx = 0; idx < theList.length; idx++) {
-            if(theList[idx].sdpId == details.id) {
+            if(theList[idx].connectionId == connectionId) {
                 theList.splice(idx, 1);
                 found = true;
                 break;
@@ -651,9 +663,9 @@ function startServer() {
         }
         
         if(found) {
-            console.log("Found and removed SDP ID "+details.id+" from connection list");
+            console.log("Found and removed SDP ID "+details.id+ ", connection ID " + connectionId +" from connection list");
         } else {
-            console.log("Did not find SDP ID "+details.id+" in the connection list");
+            console.log("Did not find SDP ID "+details.id+ ", connection ID " + connectionId +" in the connection list");
         }
     }
     
