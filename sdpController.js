@@ -28,15 +28,15 @@ var prompt = require("prompt");
 
 // If the user specified the config path, get it
 if(process.argv.length > 2) {
-	try {
-	    var config = require(process.argv[2]);
-	} catch (e) {
-	    // It isn't accessible
-	    console.log("Did not find specified config file. Exiting");
-	    process.exit();
-	}
+    try {
+        var config = require(process.argv[2]);
+    } catch (e) {
+        // It isn't accessible
+        console.log("Did not find specified config file. Exiting");
+        process.exit();
+    }
 } else {
-	var config = require('./config.js');
+    var config = require('./config.js');
 }
 
 
@@ -138,22 +138,22 @@ function checkDbPassword() {
 function startDbPool() {
   // set up database pool
   if(config.dbPasswordRequired == false) {
-	  db = mysql.createPool({
-	    connectionLimit: config.maxConnections,
-	    host: config.dbHost,
-	    user: config.dbUser,
-	    database: config.dbName,
-	    debug: false
+      db = mysql.createPool({
+        connectionLimit: config.maxConnections,
+        host: config.dbHost,
+        user: config.dbUser,
+        database: config.dbName,
+        debug: false
       });
   } else {
-	  db = mysql.createPool({
-	    connectionLimit: config.maxConnections,
-	    host: config.dbHost,
-	    user: config.dbUser,
-	    password: dbPassword, //config.dbPassword,
-	    database: config.dbName,
-	    debug: false
-	  });
+      db = mysql.createPool({
+        connectionLimit: config.maxConnections,
+        host: config.dbHost,
+        user: config.dbUser,
+        password: dbPassword, //config.dbPassword,
+        database: config.dbName,
+        debug: false
+      });
   }
 
   startServer();
@@ -190,6 +190,7 @@ function startServer() {
     var memberDetails = null;
     var dataTransmitTries = 0;
     var credentialMakerTries = 0;
+    var databaseConnTries = 0;
     var badMessagesReceived = 0;
     var newKeys = null;
     var accessRefreshDue = false;
@@ -287,12 +288,18 @@ function startServer() {
           }
           
           // now add the connection to the right list
-          destList.push({
+          newEntry = {
               sdpId: memberDetails.id,
               connectionId: connectionId,
               connectionTime: new Date(),
               socket
-          });
+          };
+          
+          //if(memberDetails.type === 'gateway') {
+          //    newEntry.connections = null;
+          //}
+
+          destList.push(newEntry);
           
   
           if (config.debug) {
@@ -364,6 +371,8 @@ function startServer() {
         handleAccessUpdate(message);
       } else if (action === 'access_ack') {
         handleAccessAck();
+      } else if (action === 'connection_update') {
+        handleConnectionUpdate(message);
       } else {
         console.error("Invalid message received, invalid or missing action");
         handleBadMessage(data.toString());
@@ -416,11 +425,11 @@ function startServer() {
                       " " + credentialMakerTries + " times.");
             console.error("Closing connection");
             
-	        var credErrMessage = {
-	          action: 'credential_update_error',
-	          data: 'Failed to generate credentials '+credentialMakerTries+ 
-	            ' times. Disconnecting.'
-	        };
+            var credErrMessage = {
+              action: 'credential_update_error',
+              data: 'Failed to generate credentials '+credentialMakerTries+ 
+                ' times. Disconnecting.'
+            };
   
             socket.end(JSON.stringify(credErrMessage));
             return;
@@ -497,12 +506,12 @@ function startServer() {
                 return;
             }
             
-	        var databaseErrorCallback = function(error) {
-	          connection.removeListener('error', databaseErrorCallback);
-	          connection.release();
-	          console.error("Error from database connection: " + error);
-	          return;
-	        };
+            var databaseErrorCallback = function(error) {
+              connection.removeListener('error', databaseErrorCallback);
+              connection.release();
+              console.error("Error from database connection: " + error);
+              return;
+            };
     
             connection.on('error', databaseErrorCallback);
             
@@ -580,13 +589,13 @@ function startServer() {
                         }
                     }
                     
-			        // only after successful notification
-			        if(memberDetails.type === 'client' &&
-			           !config.keepClientsConnected) 
-			        {
-			            socket.end();
-			        }
-			
+                    // only after successful notification
+                    if(memberDetails.type === 'client' &&
+                       !config.keepClientsConnected) 
+                    {
+                        socket.end();
+                    }
+            
 
                 } // END QUERY CALLBACK FUNCTION
 
@@ -695,12 +704,12 @@ function startServer() {
                 return;
             }
             
-	        var databaseErrorCallback = function(error) {
-	          connection.removeListener('error', databaseErrorCallback);
-	          connection.release();
-	          console.error("Error from database connection: " + error);
-	          return;
-	        };
+            var databaseErrorCallback = function(error) {
+              connection.removeListener('error', databaseErrorCallback);
+              connection.release();
+              console.error("Error from database connection: " + error);
+              return;
+            };
     
             connection.on('error', databaseErrorCallback);
             
@@ -795,6 +804,105 @@ function startServer() {
     }  // END FUNCTION handleAccessAck
 
 
+    function handleConnectionUpdate(message) {
+        console.log("Received connection update message from SDP ID "+memberDetails.id);
+        
+        // var node = null;
+        // // update connection data
+        // for(var idx = 0; idx < connectedGateways.length; idx++) {
+        //     if(connectedGateways[idx].sdpId == memberDetails.id &&
+        //        connectedGateways[idx].connectionId == connectionId) {
+        //         node = connectedGateways[idx];
+        //         break;
+        //     }
+        // }
+        // 
+        // if(node == null) {
+        //     console.error('Received connection update message from gateway, but failed to locate sender in connectedGateways list.');
+        //     return;
+        // }
+        
+        // convert conn data into nested array for sql query
+        var conns = [];
+        message['data'].forEach(function(element, index, array) {
+            conns.push([  memberDetails.id,
+                          element['sdp_id'],
+                          element['start_timestamp'],
+                          element['end_timestamp'],
+                          element['source_ip'],
+                          element['source_port'],
+                          element['destination_ip'],
+                          element['destination_port']
+                       ]);
+        });
+        
+        if(config.debug) {
+            console.log("Received connection update message:\n"+ 
+                        "     Gateway SDP ID: %d \n"+
+                        "   Connection count: %d \n",
+                        node.sdpId,
+                        message['data'].length);
+        }
+        
+        storeConnectionsInDatabase(conns);
+        return;
+    }
+    
+    // store connections in database
+    function storeConnectionsInDatabase(conns) {
+        db.getConnection(function(error,connection){
+          if(error){
+            console.error("Error connecting to database to store connections for SDP ID "+sdpId);
+            console.error(error);
+            databaseConnTries++;
+            
+            if(databaseConnTries >= config.databaseMaxRetries) {
+                console.error("Too many database connection failures. Dropping connection data.");
+                databaseConnTries = 0;
+                return;
+            }
+            
+            // retry soon
+            setTimeout(storeConnectionsInDatabase, config.databaseRetryInterval, conns);
+            return;
+          }
+          
+           // got connection, reset counter
+          databaseConnTries = 0;
+          
+          var databaseErrorCallback = function(error) {
+            connection.removeListener('error', databaseErrorCallback);
+            connection.release();
+            console.error("Error from database connection: " + error);
+            return;
+          };
+    
+          connection.on('error', databaseErrorCallback);
+          
+          connection.query(
+            'INSERT INTO `connections` (`gateway_sdpid`, `client_sdpid`, `start_timestamp`, ' +
+            '`end_timestamp`, `source_ip`, `source_port`, `destination_ip`, `destination_port`) ' +
+            'VALUES ? ' +
+            'ON DUPLICATE KEY UPDATE ' +
+            '`end_timestamp` = VALUES(`end_timestamp`)',
+            [conns],
+          function (error, rows, fields){
+            connection.removeListener('error', databaseErrorCallback);
+            connection.release();
+            if (error)
+            {
+              console.error("Failed when writing connections to database for SDP ID "+sdpId);
+              console.error(error);
+              return;
+            } 
+
+            console.log("Successfully stored connection data for SDP ID "+sdpId+" in the database");
+          });
+          
+        });
+    
+    }
+    
     // store generated keys in database
     function storeKeysInDatabase() {
       if (newKeys.hasOwnProperty('encryption_key') && 
@@ -807,18 +915,28 @@ function startServer() {
           if(error){
             console.error("Error connecting to database to store new keys for SDP ID "+sdpId);
             console.error(error);
+            databaseConnTries++;
             
+            if(databaseConnTries >= config.databaseMaxRetries) {
+                console.error("Too many database connection failures. Dropping key data.");
+                databaseConnTries = 0;
+                return;
+            }
+                        
             // retry soon
             setTimeout(storeKeysInDatabase, config.databaseRetryInterval);
             return;
           }
           
-	      var databaseErrorCallback = function(error) {
-	        connection.removeListener('error', databaseErrorCallback);
-	        connection.release();
-	        console.error("Error from database connection: " + error);
-	        return;
-	      };
+          // got connection, reset counter
+          databaseConnTries = 0;
+          
+          var databaseErrorCallback = function(error) {
+            connection.removeListener('error', databaseErrorCallback);
+            connection.release();
+            console.error("Error from database connection: " + error);
+            return;
+          };
     
           connection.on('error', databaseErrorCallback);
           

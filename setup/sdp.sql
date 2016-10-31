@@ -24,9 +24,9 @@
 -- http://www.phpmyadmin.net
 --
 -- Host: localhost
--- Generation Time: Jun 20, 2016 at 11:37 AM
--- Server version: 5.5.49-0ubuntu0.14.04.1
--- PHP Version: 5.5.9-1ubuntu4.17
+-- Generation Time: Oct 27, 2016 at 08:28 AM
+-- Server version: 5.5.52-0ubuntu0.14.04.1
+-- PHP Version: 5.5.9-1ubuntu4.20
 
 SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";
 SET time_zone = "+00:00";
@@ -40,6 +40,28 @@ SET time_zone = "+00:00";
 --
 -- Database: `sdp`
 --
+CREATE DATABASE IF NOT EXISTS `sdp` DEFAULT CHARACTER SET utf8 COLLATE utf8_bin;
+USE `sdp`;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `connections`
+--
+
+CREATE TABLE IF NOT EXISTS `connections` (
+  `gateway_sdpid` int(11) NOT NULL,
+  `client_sdpid` int(11) NOT NULL,
+  `start_timestamp` bigint(20) NOT NULL,
+  `end_timestamp` bigint(20) NOT NULL,
+  `source_ip` tinytext COLLATE utf8_bin NOT NULL,
+  `source_port` int(11) NOT NULL,
+  `destination_ip` tinytext COLLATE utf8_bin NOT NULL,
+  `destination_port` int(11) NOT NULL,
+  PRIMARY KEY (`gateway_sdpid`,`client_sdpid`,`start_timestamp`,`source_port`),
+  KEY `gateway_sdpid` (`gateway_sdpid`),
+  KEY `client_sdpid` (`client_sdpid`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_bin;
 
 -- --------------------------------------------------------
 
@@ -60,6 +82,16 @@ CREATE TABLE IF NOT EXISTS `controller` (
   KEY `gateway_id` (`gateway_id`),
   KEY `sdpid_id` (`sdpid_id`)
 ) ENGINE=InnoDB  DEFAULT CHARSET=utf8 COLLATE=utf8_bin AUTO_INCREMENT=2 ;
+
+--
+-- RELATIONS FOR TABLE `controller`:
+--   `service_id`
+--       `service` -> `id`
+--   `gateway_id`
+--       `gateway` -> `id`
+--   `sdpid_id`
+--       `sdpid` -> `id`
+--
 
 -- --------------------------------------------------------
 
@@ -92,6 +124,12 @@ CREATE TABLE IF NOT EXISTS `gateway` (
   KEY `sdpid_id` (`sdpid_id`)
 ) ENGINE=InnoDB  DEFAULT CHARSET=utf8 COLLATE=utf8_bin AUTO_INCREMENT=3 ;
 
+--
+-- RELATIONS FOR TABLE `gateway`:
+--   `sdpid_id`
+--       `sdpid` -> `id`
+--
+
 -- --------------------------------------------------------
 
 --
@@ -106,6 +144,50 @@ CREATE TABLE IF NOT EXISTS `gateway_controller` (
   KEY `controller_id` (`controller_id`),
   KEY `gateway_id` (`gateway_id`)
 ) ENGINE=InnoDB  DEFAULT CHARSET=utf8 COLLATE=utf8_bin AUTO_INCREMENT=3 ;
+
+--
+-- RELATIONS FOR TABLE `gateway_controller`:
+--   `controller_id`
+--       `controller` -> `id`
+--   `gateway_id`
+--       `gateway` -> `id`
+--
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `group`
+--
+
+CREATE TABLE IF NOT EXISTS `group` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `name` varchar(1024) COLLATE utf8_bin NOT NULL,
+  `Description` varchar(4096) COLLATE utf8_bin NOT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_bin AUTO_INCREMENT=1 ;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `group_service`
+--
+
+CREATE TABLE IF NOT EXISTS `group_service` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `group_id` int(11) NOT NULL,
+  `service_id` int(11) NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `group_id` (`group_id`,`service_id`),
+  KEY `service_id` (`service_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_bin AUTO_INCREMENT=1 ;
+
+--
+-- RELATIONS FOR TABLE `group_service`:
+--   `group_id`
+--       `group` -> `id`
+--   `service_id`
+--       `service` -> `id`
+--
 
 -- --------------------------------------------------------
 
@@ -135,6 +217,14 @@ CREATE TABLE IF NOT EXISTS `sdpid` (
   KEY `environment_id` (`environment_id`)
 ) ENGINE=InnoDB  DEFAULT CHARSET=utf8 COLLATE=utf8_bin AUTO_INCREMENT=55556 ;
 
+--
+-- RELATIONS FOR TABLE `sdpid`:
+--   `user_id`
+--       `user` -> `id`
+--   `environment_id`
+--       `environment` -> `id`
+--
+
 -- --------------------------------------------------------
 
 --
@@ -145,10 +235,19 @@ CREATE TABLE IF NOT EXISTS `sdpid_service` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `sdpid_id` int(11) NOT NULL,
   `service_id` int(11) NOT NULL,
+  `port` smallint(5) unsigned NOT NULL,
   PRIMARY KEY (`id`),
   KEY `service_id` (`service_id`),
   KEY `sdpid_id` (`sdpid_id`)
-) ENGINE=InnoDB  DEFAULT CHARSET=utf8 COLLATE=utf8_bin AUTO_INCREMENT=6 ;
+) ENGINE=InnoDB  DEFAULT CHARSET=utf8 COLLATE=utf8_bin AUTO_INCREMENT=9 ;
+
+--
+-- RELATIONS FOR TABLE `sdpid_service`:
+--   `service_id`
+--       `service` -> `id`
+--   `sdpid_id`
+--       `sdpid` -> `id`
+--
 
 -- --------------------------------------------------------
 
@@ -160,6 +259,7 @@ CREATE TABLE IF NOT EXISTS `service` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `name` varchar(1024) COLLATE utf8_bin NOT NULL,
   `description` varchar(4096) COLLATE utf8_bin NOT NULL,
+  `protocol` varchar(4) COLLATE utf8_bin NOT NULL DEFAULT 'TCP' COMMENT 'TCP, UDP',
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB  DEFAULT CHARSET=utf8 COLLATE=utf8_bin AUTO_INCREMENT=5 ;
 
@@ -179,6 +279,14 @@ CREATE TABLE IF NOT EXISTS `service_gateway` (
   KEY `service_id` (`service_id`),
   KEY `gateway_id` (`gateway_id`)
 ) ENGINE=InnoDB  DEFAULT CHARSET=utf8 COLLATE=utf8_bin AUTO_INCREMENT=5 ;
+
+--
+-- RELATIONS FOR TABLE `service_gateway`:
+--   `service_id`
+--       `service` -> `id`
+--   `gateway_id`
+--       `gateway` -> `id`
+--
 
 -- --------------------------------------------------------
 
@@ -200,6 +308,29 @@ CREATE TABLE IF NOT EXISTS `user` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB  DEFAULT CHARSET=utf8 COLLATE=utf8_bin AUTO_INCREMENT=3 ;
 
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `user_group`
+--
+
+CREATE TABLE IF NOT EXISTS `user_group` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `user_id` int(11) NOT NULL,
+  `group_id` int(11) NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `user_id` (`user_id`),
+  KEY `group_id` (`group_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_bin AUTO_INCREMENT=1 ;
+
+--
+-- RELATIONS FOR TABLE `user_group`:
+--   `user_id`
+--       `user` -> `id`
+--   `group_id`
+--       `group` -> `id`
+--
+
 --
 -- Constraints for dumped tables
 --
@@ -208,15 +339,15 @@ CREATE TABLE IF NOT EXISTS `user` (
 -- Constraints for table `controller`
 --
 ALTER TABLE `controller`
-  ADD CONSTRAINT `controller_ibfk_2` FOREIGN KEY (`service_id`) REFERENCES `service` (`id`) ON UPDATE CASCADE,
-  ADD CONSTRAINT `controller_ibfk_3` FOREIGN KEY (`gateway_id`) REFERENCES `gateway` (`id`) ON UPDATE CASCADE,
-  ADD CONSTRAINT `controller_ibfk_4` FOREIGN KEY (`sdpid_id`) REFERENCES `sdpid` (`id`) ON UPDATE CASCADE;
+  ADD CONSTRAINT `controller_ibfk_2` FOREIGN KEY (`service_id`) REFERENCES `service` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  ADD CONSTRAINT `controller_ibfk_3` FOREIGN KEY (`gateway_id`) REFERENCES `gateway` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  ADD CONSTRAINT `controller_ibfk_4` FOREIGN KEY (`sdpid_id`) REFERENCES `sdpid` (`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 --
 -- Constraints for table `gateway`
 --
 ALTER TABLE `gateway`
-  ADD CONSTRAINT `gateway_ibfk_1` FOREIGN KEY (`sdpid_id`) REFERENCES `sdpid` (`id`);
+  ADD CONSTRAINT `gateway_ibfk_1` FOREIGN KEY (`sdpid_id`) REFERENCES `sdpid` (`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 --
 -- Constraints for table `gateway_controller`
@@ -224,6 +355,13 @@ ALTER TABLE `gateway`
 ALTER TABLE `gateway_controller`
   ADD CONSTRAINT `gateway_controller_ibfk_2` FOREIGN KEY (`controller_id`) REFERENCES `controller` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   ADD CONSTRAINT `gateway_controller_ibfk_3` FOREIGN KEY (`gateway_id`) REFERENCES `gateway` (`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+--
+-- Constraints for table `group_service`
+--
+ALTER TABLE `group_service`
+  ADD CONSTRAINT `group_service_ibfk_1` FOREIGN KEY (`group_id`) REFERENCES `group` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  ADD CONSTRAINT `group_service_ibfk_2` FOREIGN KEY (`service_id`) REFERENCES `service` (`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 --
 -- Constraints for table `sdpid`
@@ -245,6 +383,13 @@ ALTER TABLE `sdpid_service`
 ALTER TABLE `service_gateway`
   ADD CONSTRAINT `service_gateway_ibfk_1` FOREIGN KEY (`service_id`) REFERENCES `service` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   ADD CONSTRAINT `service_gateway_ibfk_2` FOREIGN KEY (`gateway_id`) REFERENCES `gateway` (`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+--
+-- Constraints for table `user_group`
+--
+ALTER TABLE `user_group`
+  ADD CONSTRAINT `user_group_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  ADD CONSTRAINT `user_group_ibfk_2` FOREIGN KEY (`group_id`) REFERENCES `group` (`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
 /*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
