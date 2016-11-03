@@ -88,7 +88,7 @@ credentialMaker.prototype.getNewCredentials =	function(memberDetails, callback) 
   });
 
   promiseNewCreds.then( function(creds) {
-    console.log("New credentials successfully created for sdp member " + memberDetails.id);
+    console.log("New credentials successfully created for sdp member " + memberDetails.sdpid);
     
     var credentials = {
       encryption_key: creds.encryptionKey,
@@ -163,7 +163,7 @@ function getNewCert(memberDetails, callback) {
     locality: memberDetails.locality,
     organization: memberDetails.org,
     organizationUnit: memberDetails.org_unit,
-    commonName: memberDetails.id.toString(),
+    commonName: memberDetails.sdpid.toString(),
     emailAddress: memberDetails.email
   };
 

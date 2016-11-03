@@ -243,7 +243,7 @@ function startServer() {
     
       connection.on('error', databaseErrorCallback);
       
-      connection.query('SELECT * FROM `sdpid` WHERE `id` = ?', [sdpId], 
+      connection.query('SELECT * FROM `sdpid` WHERE `sdpid` = ?', [sdpId], 
       function (error, rows, fields) {
         connection.removeListener('error', databaseErrorCallback);
         connection.release();
@@ -272,7 +272,7 @@ function startServer() {
 
           // first ensure no duplicate connection entries are left around
           for(var idx = 0; idx < destList.length; idx++) {
-              if(destList[idx].sdpId == memberDetails.id) {
+              if(destList[idx].sdpId == memberDetails.sdpid) {
                   // this next call triggers socket.on('end'...
                   // which removes the entry from the connection list
                   destList[idx].socket.end(
@@ -289,7 +289,7 @@ function startServer() {
           
           // now add the connection to the right list
           newEntry = {
-              sdpId: memberDetails.id,
+              sdpId: memberDetails.sdpid,
               connectionId: connectionId,
               connectionTime: new Date(),
               socket
@@ -350,7 +350,7 @@ function startServer() {
 
       if(config.debug) {
         console.log("Message parsed");
-        console.log("Message received from SDP ID " + memberDetails.id);
+        console.log("Message received from SDP ID " + memberDetails.sdpid);
         console.log("JSON-Parsed Message Data Received: ");
         for(var myKey in message) {
           console.log("key: " + myKey + "   value: " + message[myKey]);
@@ -381,7 +381,7 @@ function startServer() {
     
     function handleKeepAlive() {
       if (config.debug) {
-        console.log("Received keep_alive from SDP ID "+memberDetails.id+", responding now.");
+        console.log("Received keep_alive from SDP ID "+memberDetails.sdpid+", responding now.");
       }
       
       var keepAliveMessage = {
@@ -406,7 +406,7 @@ function startServer() {
     function handleCredentialUpdate() {
       if (dataTransmitTries >= config.maxDataTransmitTries) {
         // Data transmission has failed
-        console.error("Data transmission to SDP ID " + memberDetails.id + 
+        console.error("Data transmission to SDP ID " + memberDetails.sdpid + 
           " has failed after " + (dataTransmitTries+1) + " attempts");
         console.error("Closing connection");
         socket.end();
@@ -421,7 +421,7 @@ function startServer() {
           
           if (credentialMakerTries >= config.maxCredentialMakerTries) {
             // Credential making has failed
-            console.error("Failed to make credentials for SDP ID " + memberDetails.id +
+            console.error("Failed to make credentials for SDP ID " + memberDetails.sdpid +
                       " " + credentialMakerTries + " times.");
             console.error("Closing connection");
             
@@ -443,7 +443,7 @@ function startServer() {
   
 
           console.log("Sending credential_update_error message to SDP ID " + 
-            memberDetails.id + ", failed attempt: " + credentialMakerTries);
+            memberDetails.sdpid + ", failed attempt: " + credentialMakerTries);
           socket.write(JSON.stringify(credErrMessage));
   
         } else {
@@ -468,7 +468,7 @@ function startServer() {
             expires
           };
   
-          console.log("Sending credential_update message to SDP ID " + memberDetails.id + ", attempt: " + dataTransmitTries);
+          console.log("Sending credential_update message to SDP ID " + memberDetails.sdpid + ", attempt: " + dataTransmitTries);
           dataTransmitTries++;
           socket.write(JSON.stringify(newCredMessage));
   
@@ -479,7 +479,7 @@ function startServer() {
     
     
     function handleCredentialUpdateAck()  {
-      console.log("Received credential update acknowledgement from SDP ID "+memberDetails.id+
+      console.log("Received credential update acknowledgement from SDP ID "+memberDetails.sdpid+
         ", data successfully delivered");
 
       // store the necessary info in the database
@@ -524,21 +524,21 @@ function startServer() {
             
             connection.query(
                 'SELECT ' +
-                '    `gateway`.`sdpid_id`,  ' +
+                '    `gateway`.`sdpid`,  ' +
                 '    `service_gateway`.`protocol_port`, ' +
                 '    `sdpid`.`encrypt_key`,  ' +
                 '    `sdpid`.`hmac_key` ' +
                 'FROM `gateway` ' +
                 '    JOIN `service_gateway` ' +
-                '        ON `service_gateway`.`gateway_id` = `gateway`.`id` ' +
+                '        ON `service_gateway`.`gateway_sdpid` = `gateway`.`sdpid` ' +
                 '    JOIN `sdpid_service` ' +
                 '        ON `sdpid_service`.`service_id` = `service_gateway`.`service_id` ' +
                 '    JOIN `sdpid` ' +
-                '        ON `sdpid`.`id` = `sdpid_service`.`sdpid_id` ' +
-                'WHERE `gateway`.`sdpid_id` IN (?) ' +
-                'AND `sdpid`.`id` = ? ' +
-                'ORDER BY `sdpid_id` ',
-                [gatewaySdpIdList, memberDetails.id],
+                '        ON `sdpid`.`sdpid` = `sdpid_service`.`sdpid` ' +
+                'WHERE `gateway`.`sdpid` IN (?) ' +
+                'AND `sdpid`.`sdpid` = ? ' +
+                'ORDER BY `gateway`.`sdpid` ',
+                [gatewaySdpIdList, memberDetails.sdpid],
                 function (error, rows, fields) {
                     connection.removeListener('error', databaseErrorCallback);
                     connection.release();
@@ -554,12 +554,12 @@ function startServer() {
                     }
                     
                     if(rows.length == 0) {
-                        console.log("No relevant gateways to notify regarding credential update to SDP ID "+memberDetails.id);
+                        console.log("No relevant gateways to notify regarding credential update to SDP ID "+memberDetails.sdpid);
                         return;
                     }
                     
                     var thisRow = rows[0];
-                    var currentGatewaySdpId = thisRow.sdpid_id;
+                    var currentGatewaySdpId = thisRow.sdpid;
                     var openPorts = thisRow.protocol_port;
                     var encryptKey = thisRow.encrypt_key;
                     var hmacKey = thisRow.hmac_key;
@@ -567,8 +567,8 @@ function startServer() {
                     for(var rowIdx = 0; rowIdx < rows.length; rowIdx++) {
                         thisRow = rows[rowIdx];
                         
-                        if(thisRow.sdpid_id != currentGatewaySdpId) {
-                            currentGatewaySdpId = thisRow.sdpid_id;
+                        if(thisRow.sdpid != currentGatewaySdpId) {
+                            currentGatewaySdpId = thisRow.sdpid;
                             openPorts = thisRow.protocol_port;
                             encryptKey = thisRow.encrypt_key;
                             hmacKey = thisRow.hmac_key;
@@ -578,11 +578,11 @@ function startServer() {
                         
                         // if this is the last data row or the next is a different gateway
                         if( (rowIdx + 1) == rows.length || 
-                            rows[rowIdx + 1].sdpid_id != currentGatewaySdpId ) {
+                            rows[rowIdx + 1].sdpid != currentGatewaySdpId ) {
                             
                             // send off this stanza data
                             notifyGateway(currentGatewaySdpId, 
-                                          memberDetails.id,
+                                          memberDetails.sdpid,
                                           openPorts, 
                                           encryptKey,
                                           hmacKey);
@@ -657,10 +657,10 @@ function startServer() {
         
         if(details.type === 'client') {
             var theList = connectedClients;
-            console.log("Searching connected client list for SDP ID " + details.id + ", connection ID " + connectionId);
+            console.log("Searching connected client list for SDP ID " + details.sdpid + ", connection ID " + connectionId);
         } else {
             var theList = connectedGateways;
-            console.log("Searching connected gateway list for SDP ID " + details.id + ", connection ID " + connectionId);
+            console.log("Searching connected gateway list for SDP ID " + details.sdpid + ", connection ID " + connectionId);
         }
         
         for(var idx = 0; idx < theList.length; idx++) {
@@ -672,9 +672,9 @@ function startServer() {
         }
         
         if(found) {
-            console.log("Found and removed SDP ID "+details.id+ ", connection ID " + connectionId +" from connection list");
+            console.log("Found and removed SDP ID "+details.sdpid+ ", connection ID " + connectionId +" from connection list");
         } else {
-            console.log("Did not find SDP ID "+details.id+ ", connection ID " + connectionId +" in the connection list");
+            console.log("Did not find SDP ID "+details.sdpid+ ", connection ID " + connectionId +" in the connection list");
         }
     }
     
@@ -682,7 +682,7 @@ function startServer() {
     function handleAccessRefresh() {
         if (dataTransmitTries >= config.maxDataTransmitTries) {
             // Data transmission has failed
-            console.error("Data transmission to SDP ID " + memberDetails.id + 
+            console.error("Data transmission to SDP ID " + memberDetails.sdpid + 
               " has failed after " + (dataTransmitTries+1) + " attempts");
             console.error("Closing connection");
             socket.end();
@@ -715,20 +715,20 @@ function startServer() {
             
             connection.query(
                 'SELECT ' +
-                '    `sdpid_service`.`sdpid_id`,  ' +
+                '    `sdpid_service`.`sdpid`,  ' +
                 '    `service_gateway`.`protocol_port`, ' +
                 '    `sdpid`.`encrypt_key`,  ' +
                 '    `sdpid`.`hmac_key` ' +
                 'FROM `gateway` ' +
                 '    JOIN `service_gateway` ' +
-                '        ON `service_gateway`.`gateway_id` = `gateway`.`id` ' +
+                '        ON `service_gateway`.`gateway_sdpid` = `gateway`.`sdpid` ' +
                 '    JOIN `sdpid_service` ' +
                 '        ON `sdpid_service`.`service_id` = `service_gateway`.`service_id` ' +
                 '    JOIN `sdpid` ' +
-                '        ON `sdpid`.`id` = `sdpid_service`.`sdpid_id` ' +
-                'WHERE `gateway`.`sdpid_id` = ? ' +
-                'ORDER BY `sdpid_id` ',
-                [memberDetails.id],
+                '        ON `sdpid`.`sdpid` = `sdpid_service`.`sdpid` ' +
+                'WHERE `gateway`.`sdpid` = ? ' +
+                'ORDER BY `sdpid_service`.`sdpid` ',
+                [memberDetails.sdpid],
                 function (error, rows, fields) {
                     connection.removeListener('error', databaseErrorCallback);
                     connection.release();
@@ -749,10 +749,10 @@ function startServer() {
                     for(var rowIdx = 0; rowIdx < rows.length; rowIdx++) {
                         var thisRow = rows[rowIdx];
                         dataIdx = data.length - 1;
-                        if(thisRow.sdpid_id != currentSdpId) {
-                            currentSdpId = thisRow.sdpid_id;
+                        if(thisRow.sdpid != currentSdpId) {
+                            currentSdpId = thisRow.sdpid;
                             data.push({
-                                sdp_client_id: thisRow.sdpid_id,
+                                sdp_client_id: thisRow.sdpid,
                                 source: "ANY",
                                 open_ports: thisRow.protocol_port,
                                 key_base64: thisRow.encrypt_key,
@@ -769,7 +769,7 @@ function startServer() {
                     
                     dataTransmitTries++;
                     console.log("Sending access_refresh message to SDP ID " + 
-                        memberDetails.id + ", attempt: " + dataTransmitTries);
+                        memberDetails.sdpid + ", attempt: " + dataTransmitTries);
             
                     socket.write(
                         JSON.stringify({
@@ -796,7 +796,7 @@ function startServer() {
     
     
     function handleAccessAck()  {
-      console.log("Received access data acknowledgement from SDP ID "+memberDetails.id+
+      console.log("Received access data acknowledgement from SDP ID "+memberDetails.sdpid+
         ", data successfully delivered");
 
       clearStateVars();
@@ -805,7 +805,7 @@ function startServer() {
 
 
     function handleConnectionUpdate(message) {
-        console.log("Received connection update message from SDP ID "+memberDetails.id);
+        console.log("Received connection update message from SDP ID "+memberDetails.sdpid);
         
         // var node = null;
         // // update connection data
@@ -825,7 +825,7 @@ function startServer() {
         // convert conn data into nested array for sql query
         var conns = [];
         message['data'].forEach(function(element, index, array) {
-            conns.push([  memberDetails.id,
+            conns.push([  memberDetails.sdpid,
                           element['sdp_id'],
                           element['start_timestamp'],
                           element['end_timestamp'],
@@ -943,12 +943,12 @@ function startServer() {
           connection.query(
             'UPDATE `sdpid` SET ' +
             '`encrypt_key` = ?, `hmac_key` = ?, ' +
-            '`last_cred_update` = ?, `cred_update_due` = ? WHERE `id` = ?', 
+            '`last_cred_update` = ?, `cred_update_due` = ? WHERE `sdpid` = ?', 
             [newKeys.encryption_key,
              newKeys.hmac_key,
              newKeys.updated,
              newKeys.expires,
-             memberDetails.id],
+             memberDetails.sdpid],
           function (error, rows, fields){
             connection.removeListener('error', databaseErrorCallback);
             connection.release();
