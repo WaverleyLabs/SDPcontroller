@@ -24,7 +24,7 @@
 -- http://www.phpmyadmin.net
 --
 -- Host: localhost
--- Generation Time: Nov 03, 2016 at 03:32 PM
+-- Generation Time: Nov 07, 2016 at 06:34 AM
 -- Server version: 5.5.52-0ubuntu0.14.04.1
 -- PHP Version: 5.5.9-1ubuntu4.20
 
@@ -46,10 +46,11 @@ USE `sdp`;
 -- --------------------------------------------------------
 
 --
--- Table structure for table `connections`
+-- Table structure for table `connection`
 --
 
-CREATE TABLE IF NOT EXISTS `connections` (
+DROP TABLE IF EXISTS `connection`;
+CREATE TABLE IF NOT EXISTS `connection` (
   `gateway_sdpid` int(11) NOT NULL,
   `client_sdpid` int(11) NOT NULL,
   `start_timestamp` bigint(20) NOT NULL,
@@ -64,7 +65,7 @@ CREATE TABLE IF NOT EXISTS `connections` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_bin;
 
 --
--- RELATIONS FOR TABLE `connections`:
+-- RELATIONS FOR TABLE `connection`:
 --   `client_sdpid`
 --       `sdpid` -> `sdpid`
 --   `gateway_sdpid`
@@ -77,6 +78,7 @@ CREATE TABLE IF NOT EXISTS `connections` (
 -- Table structure for table `controller`
 --
 
+DROP TABLE IF EXISTS `controller`;
 CREATE TABLE IF NOT EXISTS `controller` (
   `sdpid` int(11) NOT NULL,
   `name` varchar(1024) COLLATE utf8_bin NOT NULL,
@@ -105,6 +107,7 @@ CREATE TABLE IF NOT EXISTS `controller` (
 -- Table structure for table `environment`
 --
 
+DROP TABLE IF EXISTS `environment`;
 CREATE TABLE IF NOT EXISTS `environment` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `name` varchar(1024) COLLATE utf8_bin NOT NULL,
@@ -120,6 +123,7 @@ CREATE TABLE IF NOT EXISTS `environment` (
 -- Table structure for table `gateway`
 --
 
+DROP TABLE IF EXISTS `gateway`;
 CREATE TABLE IF NOT EXISTS `gateway` (
   `sdpid` int(11) NOT NULL,
   `name` varchar(1024) COLLATE utf8_bin NOT NULL,
@@ -140,6 +144,7 @@ CREATE TABLE IF NOT EXISTS `gateway` (
 -- Table structure for table `gateway_controller`
 --
 
+DROP TABLE IF EXISTS `gateway_controller`;
 CREATE TABLE IF NOT EXISTS `gateway_controller` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `gateway_sdpid` int(11) NOT NULL,
@@ -163,12 +168,27 @@ CREATE TABLE IF NOT EXISTS `gateway_controller` (
 -- Table structure for table `group`
 --
 
+DROP TABLE IF EXISTS `group`;
 CREATE TABLE IF NOT EXISTS `group` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `name` varchar(1024) COLLATE utf8_bin NOT NULL,
   `Description` varchar(4096) COLLATE utf8_bin NOT NULL,
   PRIMARY KEY (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_bin AUTO_INCREMENT=1 ;
+) ENGINE=InnoDB  DEFAULT CHARSET=utf8 COLLATE=utf8_bin AUTO_INCREMENT=2 ;
+
+--
+-- Triggers `group`
+--
+DROP TRIGGER IF EXISTS `group_after_delete`;
+DELIMITER //
+CREATE TRIGGER `group_after_delete` AFTER DELETE ON `group`
+ FOR EACH ROW BEGIN
+    INSERT INTO refresh_trigger
+    SET table_name = 'group',
+        event = 'delete';
+END
+//
+DELIMITER ;
 
 -- --------------------------------------------------------
 
@@ -176,6 +196,7 @@ CREATE TABLE IF NOT EXISTS `group` (
 -- Table structure for table `group_service`
 --
 
+DROP TABLE IF EXISTS `group_service`;
 CREATE TABLE IF NOT EXISTS `group_service` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `group_id` int(11) NOT NULL,
@@ -183,7 +204,7 @@ CREATE TABLE IF NOT EXISTS `group_service` (
   PRIMARY KEY (`id`),
   KEY `service_id` (`service_id`),
   KEY `group_id` (`group_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_bin AUTO_INCREMENT=1 ;
+) ENGINE=InnoDB  DEFAULT CHARSET=utf8 COLLATE=utf8_bin AUTO_INCREMENT=2 ;
 
 --
 -- RELATIONS FOR TABLE `group_service`:
@@ -193,14 +214,65 @@ CREATE TABLE IF NOT EXISTS `group_service` (
 --       `group` -> `id`
 --
 
+--
+-- Triggers `group_service`
+--
+DROP TRIGGER IF EXISTS `group_service_after_delete`;
+DELIMITER //
+CREATE TRIGGER `group_service_after_delete` AFTER DELETE ON `group_service`
+ FOR EACH ROW BEGIN
+    INSERT INTO refresh_trigger
+    SET table_name = 'group_service',
+        event = 'delete';
+END
+//
+DELIMITER ;
+DROP TRIGGER IF EXISTS `group_service_after_insert`;
+DELIMITER //
+CREATE TRIGGER `group_service_after_insert` AFTER INSERT ON `group_service`
+ FOR EACH ROW BEGIN
+    INSERT INTO refresh_trigger
+    SET table_name = 'group_service',
+        event = 'insert';
+END
+//
+DELIMITER ;
+DROP TRIGGER IF EXISTS `group_service_after_update`;
+DELIMITER //
+CREATE TRIGGER `group_service_after_update` AFTER UPDATE ON `group_service`
+ FOR EACH ROW BEGIN
+    INSERT INTO refresh_trigger
+    SET table_name = 'group_service',
+        event = 'update';
+END
+//
+DELIMITER ;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `refresh_trigger`
+--
+
+DROP TABLE IF EXISTS `refresh_trigger`;
+CREATE TABLE IF NOT EXISTS `refresh_trigger` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `timestamp` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `table_name` tinytext COLLATE utf8_bin NOT NULL,
+  `event` tinytext COLLATE utf8_bin NOT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB  DEFAULT CHARSET=utf8 COLLATE=utf8_bin AUTO_INCREMENT=10 ;
+
 -- --------------------------------------------------------
 
 --
 -- Table structure for table `sdpid`
 --
 
+DROP TABLE IF EXISTS `sdpid`;
 CREATE TABLE IF NOT EXISTS `sdpid` (
   `sdpid` int(11) NOT NULL AUTO_INCREMENT,
+  `valid` tinyint(1) NOT NULL DEFAULT '1',
   `type` enum('client','gateway','controller') COLLATE utf8_bin NOT NULL DEFAULT 'client',
   `country` varchar(128) COLLATE utf8_bin NOT NULL,
   `state` varchar(128) COLLATE utf8_bin NOT NULL,
@@ -223,11 +295,38 @@ CREATE TABLE IF NOT EXISTS `sdpid` (
 
 --
 -- RELATIONS FOR TABLE `sdpid`:
---   `environment_id`
---       `environment` -> `id`
 --   `user_id`
 --       `user` -> `id`
+--   `environment_id`
+--       `environment` -> `id`
 --
+
+--
+-- Triggers `sdpid`
+--
+DROP TRIGGER IF EXISTS `sdpid_after_delete`;
+DELIMITER //
+CREATE TRIGGER `sdpid_after_delete` AFTER DELETE ON `sdpid`
+ FOR EACH ROW BEGIN
+    INSERT INTO refresh_trigger
+    SET table_name = 'sdpid',
+        event = 'delete';
+END
+//
+DELIMITER ;
+DROP TRIGGER IF EXISTS `sdpid_after_update`;
+DELIMITER //
+CREATE TRIGGER `sdpid_after_update` AFTER UPDATE ON `sdpid`
+ FOR EACH ROW BEGIN
+IF OLD.user_id != NEW.user_id OR
+   OLD.valid != NEW.valid THEN
+    INSERT INTO refresh_trigger
+    SET table_name = 'sdpid',
+        event = 'update';
+END IF;
+END
+//
+DELIMITER ;
 
 -- --------------------------------------------------------
 
@@ -235,6 +334,7 @@ CREATE TABLE IF NOT EXISTS `sdpid` (
 -- Table structure for table `sdpid_service`
 --
 
+DROP TABLE IF EXISTS `sdpid_service`;
 CREATE TABLE IF NOT EXISTS `sdpid_service` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `sdpid` int(11) NOT NULL,
@@ -253,12 +353,47 @@ CREATE TABLE IF NOT EXISTS `sdpid_service` (
 --       `sdpid` -> `sdpid`
 --
 
+--
+-- Triggers `sdpid_service`
+--
+DROP TRIGGER IF EXISTS `sdpid_service_after_delete`;
+DELIMITER //
+CREATE TRIGGER `sdpid_service_after_delete` AFTER DELETE ON `sdpid_service`
+ FOR EACH ROW BEGIN
+    INSERT INTO refresh_trigger
+    SET table_name = 'sdpid_service',
+        event = 'delete';
+END
+//
+DELIMITER ;
+DROP TRIGGER IF EXISTS `sdpid_service_after_insert`;
+DELIMITER //
+CREATE TRIGGER `sdpid_service_after_insert` AFTER INSERT ON `sdpid_service`
+ FOR EACH ROW BEGIN
+    INSERT INTO refresh_trigger
+    SET table_name = 'sdpid_service',
+        event = 'insert';
+END
+//
+DELIMITER ;
+DROP TRIGGER IF EXISTS `sdpid_service_after_update`;
+DELIMITER //
+CREATE TRIGGER `sdpid_service_after_update` AFTER UPDATE ON `sdpid_service`
+ FOR EACH ROW BEGIN
+    INSERT INTO refresh_trigger
+    SET table_name = 'sdpid_service',
+        event = 'update';
+END
+//
+DELIMITER ;
+
 -- --------------------------------------------------------
 
 --
 -- Table structure for table `service`
 --
 
+DROP TABLE IF EXISTS `service`;
 CREATE TABLE IF NOT EXISTS `service` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `name` varchar(1024) COLLATE utf8_bin NOT NULL,
@@ -267,12 +402,27 @@ CREATE TABLE IF NOT EXISTS `service` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB  DEFAULT CHARSET=utf8 COLLATE=utf8_bin AUTO_INCREMENT=5 ;
 
+--
+-- Triggers `service`
+--
+DROP TRIGGER IF EXISTS `service_after_delete`;
+DELIMITER //
+CREATE TRIGGER `service_after_delete` AFTER DELETE ON `service`
+ FOR EACH ROW BEGIN
+    INSERT INTO refresh_trigger
+    SET table_name = 'service',
+        event = 'delete';
+END
+//
+DELIMITER ;
+
 -- --------------------------------------------------------
 
 --
 -- Table structure for table `service_gateway`
 --
 
+DROP TABLE IF EXISTS `service_gateway`;
 CREATE TABLE IF NOT EXISTS `service_gateway` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `service_id` int(11) NOT NULL,
@@ -292,12 +442,47 @@ CREATE TABLE IF NOT EXISTS `service_gateway` (
 --       `service` -> `id`
 --
 
+--
+-- Triggers `service_gateway`
+--
+DROP TRIGGER IF EXISTS `service_gateway_after_delete`;
+DELIMITER //
+CREATE TRIGGER `service_gateway_after_delete` AFTER DELETE ON `service_gateway`
+ FOR EACH ROW BEGIN
+    INSERT INTO refresh_trigger
+    SET table_name = 'service_gateway',
+        event = 'delete';
+END
+//
+DELIMITER ;
+DROP TRIGGER IF EXISTS `service_gateway_after_insert`;
+DELIMITER //
+CREATE TRIGGER `service_gateway_after_insert` AFTER INSERT ON `service_gateway`
+ FOR EACH ROW BEGIN
+    INSERT INTO refresh_trigger
+    SET table_name = 'service_gateway',
+        event = 'insert';
+END
+//
+DELIMITER ;
+DROP TRIGGER IF EXISTS `service_gateway_after_update`;
+DELIMITER //
+CREATE TRIGGER `service_gateway_after_update` AFTER UPDATE ON `service_gateway`
+ FOR EACH ROW BEGIN
+    INSERT INTO refresh_trigger
+    SET table_name = 'service_gateway',
+        event = 'update';
+END
+//
+DELIMITER ;
+
 -- --------------------------------------------------------
 
 --
 -- Table structure for table `user`
 --
 
+DROP TABLE IF EXISTS `user`;
 CREATE TABLE IF NOT EXISTS `user` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `last_name` varchar(128) COLLATE utf8_bin NOT NULL,
@@ -312,12 +497,27 @@ CREATE TABLE IF NOT EXISTS `user` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB  DEFAULT CHARSET=utf8 COLLATE=utf8_bin AUTO_INCREMENT=3 ;
 
+--
+-- Triggers `user`
+--
+DROP TRIGGER IF EXISTS `user_after_delete`;
+DELIMITER //
+CREATE TRIGGER `user_after_delete` AFTER DELETE ON `user`
+ FOR EACH ROW BEGIN
+    INSERT INTO refresh_trigger
+    SET table_name = 'user',
+        event = 'delete';
+END
+//
+DELIMITER ;
+
 -- --------------------------------------------------------
 
 --
 -- Table structure for table `user_group`
 --
 
+DROP TABLE IF EXISTS `user_group`;
 CREATE TABLE IF NOT EXISTS `user_group` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `user_id` int(11) NOT NULL,
@@ -336,15 +536,49 @@ CREATE TABLE IF NOT EXISTS `user_group` (
 --
 
 --
+-- Triggers `user_group`
+--
+DROP TRIGGER IF EXISTS `user_group_after_delete`;
+DELIMITER //
+CREATE TRIGGER `user_group_after_delete` AFTER DELETE ON `user_group`
+ FOR EACH ROW BEGIN
+    INSERT INTO refresh_trigger
+    SET table_name = 'user_group',
+        event = 'delete';
+END
+//
+DELIMITER ;
+DROP TRIGGER IF EXISTS `user_group_after_insert`;
+DELIMITER //
+CREATE TRIGGER `user_group_after_insert` AFTER INSERT ON `user_group`
+ FOR EACH ROW BEGIN
+    INSERT INTO refresh_trigger
+    SET table_name = 'user_group',
+        event = 'insert';
+END
+//
+DELIMITER ;
+DROP TRIGGER IF EXISTS `user_group_after_update`;
+DELIMITER //
+CREATE TRIGGER `user_group_after_update` AFTER UPDATE ON `user_group`
+ FOR EACH ROW BEGIN
+    INSERT INTO refresh_trigger
+    SET table_name = 'user_group',
+        event = 'update';
+END
+//
+DELIMITER ;
+
+--
 -- Constraints for dumped tables
 --
 
 --
--- Constraints for table `connections`
+-- Constraints for table `connection`
 --
-ALTER TABLE `connections`
-  ADD CONSTRAINT `connections_ibfk_2` FOREIGN KEY (`client_sdpid`) REFERENCES `sdpid` (`sdpid`) ON UPDATE CASCADE,
-  ADD CONSTRAINT `connections_ibfk_1` FOREIGN KEY (`gateway_sdpid`) REFERENCES `sdpid` (`sdpid`) ON UPDATE CASCADE;
+ALTER TABLE `connection`
+  ADD CONSTRAINT `connection_ibfk_2` FOREIGN KEY (`client_sdpid`) REFERENCES `sdpid` (`sdpid`) ON DELETE NO ACTION ON UPDATE CASCADE,
+  ADD CONSTRAINT `connection_ibfk_1` FOREIGN KEY (`gateway_sdpid`) REFERENCES `sdpid` (`sdpid`) ON DELETE NO ACTION ON UPDATE CASCADE;
 
 --
 -- Constraints for table `controller`
@@ -378,8 +612,8 @@ ALTER TABLE `group_service`
 -- Constraints for table `sdpid`
 --
 ALTER TABLE `sdpid`
-  ADD CONSTRAINT `sdpid_ibfk_2` FOREIGN KEY (`environment_id`) REFERENCES `environment` (`id`) ON UPDATE CASCADE,
-  ADD CONSTRAINT `sdpid_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON UPDATE CASCADE;
+  ADD CONSTRAINT `sdpid_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON UPDATE CASCADE,
+  ADD CONSTRAINT `sdpid_ibfk_2` FOREIGN KEY (`environment_id`) REFERENCES `environment` (`id`) ON UPDATE CASCADE;
 
 --
 -- Constraints for table `sdpid_service`

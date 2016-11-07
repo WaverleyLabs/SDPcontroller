@@ -53,6 +53,8 @@ var myCredentialMaker = new credentialMaker(config);
 var connectedGateways = [];
 var connectedClients  = [];
 var nextConnectionId  = 1;
+var checkDatabaseTries = 0;
+var lastDatabaseCheck = new Date();
 
 
 // check a couple config settings
@@ -156,6 +158,15 @@ function startDbPool() {
       });
   }
 
+  startDatabaseMonitor();
+}
+
+
+function startDatabaseMonitor(someArg) {
+
+  setTimeout(checkDatabaseForUpdates, 
+             config.databaseMonitorInterval, 
+             config.databaseMonitorInterval);
   startServer();
 }
 
@@ -257,10 +268,12 @@ function startServer() {
         } else if (rows.length > 1) {
           console.error("Query returned multiple rows for SDP ID: " + sdpId);
           socket.end(JSON.stringify({action: 'database_error'}));
+        } else if (rows[0].valid == 0) {
+          console.error("SDP ID " + sdpId+" disabled. Disconnecting.");
+          socket.end(JSON.stringify({action: 'sdpid_unauthorized'}));
         } else {
   
           memberDetails = rows[0];
-          
           
           // add the connection to the appropriate list
           var destList;
@@ -726,7 +739,7 @@ function startServer() {
                 '        ON `sdpid_service`.`service_id` = `service_gateway`.`service_id` ' +
                 '    JOIN `sdpid` ' +
                 '        ON `sdpid`.`sdpid` = `sdpid_service`.`sdpid` ' +
-                'WHERE `gateway`.`sdpid` = ? ' +
+                'WHERE `sdpid`.`valid` = 1 AND `gateway`.`sdpid` = ? ' +
                 'ORDER BY `sdpid_service`.`sdpid` ',
                 [memberDetails.sdpid],
                 function (error, rows, fields) {
@@ -880,7 +893,7 @@ function startServer() {
           connection.on('error', databaseErrorCallback);
           
           connection.query(
-            'INSERT INTO `connections` (`gateway_sdpid`, `client_sdpid`, `start_timestamp`, ' +
+            'INSERT INTO `connection` (`gateway_sdpid`, `client_sdpid`, `start_timestamp`, ' +
             '`end_timestamp`, `source_ip`, `source_port`, `destination_ip`, `destination_port`) ' +
             'VALUES ? ' +
             'ON DUPLICATE KEY UPDATE ' +
@@ -1020,16 +1033,229 @@ function startServer() {
 
   // Put a friendly message on the terminal of the server.
   console.log("SDP Controller running at port " + config.serverPort);
-}
+}  // END function startServer
+
+
+
+function checkDatabaseForUpdates(currentInterval) {
+    // only run this check if a gateway or gateways are connected
+    if(connectedGateways.length == 0) {
+        setTimeout(checkDatabaseForUpdates, config.databaseMonitorInterval, currentInterval);
+        return;
+    }
+    
+    // get database connection
+    db.getConnection(function(error,connection){
+        if(error){
+            checkDatabaseTries++;
+            currentInterval = currentInterval*2;
+            
+            console.error("Error connecting to database in preparation " + 
+                          "to check for database updates: " + error);
+                          
+            console.error("Number of consecutive database check failures: "
+                          +checkDatabaseTries);
+                          
+            console.error("Doubling database monitoring interval, will retry in "
+                          +currentInterval+" milliseconds.");
+            
+            // retry soon
+            setTimeout(checkDatabaseForUpdates, config.databaseMonitorInterval, currentInterval);
+            return;
+        }
+        
+        var databaseErrorCallback = function(error) {
+            connection.removeListener('error', databaseErrorCallback);
+            connection.release();
+            console.error("Error from database connection: " + error);
+            // retry soon
+            setTimeout(checkDatabaseForUpdates, config.databaseMonitorInterval, currentInterval);
+            return;
+        };
+    
+        connection.on('error', databaseErrorCallback);
+        
+        // got a connection to the database, make sure interval is correct
+        currentInterval = config.databaseMonitorInterval;
+        checkDatabaseTries = 0;
+        
+        connection.query(
+            'SELECT ' +
+            '    `timestamp` ' +
+            'FROM `refresh_trigger` ' +
+            'WHERE `timestamp` >= ? ',
+            [lastDatabaseCheck],
+            function (error, rows, fields) {
+                if(error) {
+                    console.error("Access data refresh query returned error: " + error);
+	                connection.removeListener('error', databaseErrorCallback);
+	                connection.release();
+                    setTimeout(checkDatabaseForUpdates, config.databaseMonitorInterval, currentInterval);
+                    return;
+                }
+                
+                if(rows.length == 0) {
+                    if(config.debug) console.log("No database updates found requiring access data refresh.");
+                    //console.log("No database updates found requiring access data refresh.");
+                    connection.removeListener('error', databaseErrorCallback);
+                    connection.release();
+                    setTimeout(checkDatabaseForUpdates, config.databaseMonitorInterval, currentInterval);
+                    return;
+                }
+                
+                console.log("checkDatabaseForUpdates query found relevant updates, " +
+                            "sending access refresh to all connected gateways.");
+                            
+                // arriving here means a relevant database update occurred
+                sendAllGatewaysAccessRefresh();
+
+			    // Arriving here means the database check was successful
+			    lastDatabaseCheck = new Date();
+			    currentInterval = config.databaseMonitorInterval;
+			    setTimeout(checkDatabaseForUpdates, config.databaseMonitorInterval, currentInterval);
+			    
+            }  // END QUERY CALLBACK FUNCTION
+            
+        ); // END QUERY CALL 
+        
+                
+	    function sendAllGatewaysAccessRefresh() {
+	        // this next query requires a simple array of only
+	        // the sdp ids listed in connectedGateways
+	        var gatewaySdpIdList = [];
+	        for(var idx = 0; idx < connectedGateways.length; idx++) {
+	            gatewaySdpIdList.push(connectedGateways[idx].sdpId);
+	        }
+	        
+	        connection.query(
+	            'SELECT ' +
+	            '    `gateway`.`sdpid` as gatewaySdpId,  ' +
+	            '    `sdpid`.`sdpid` as clientSdpId, ' +
+	            '    `service_gateway`.`protocol_port`, ' +
+	            '    `sdpid`.`encrypt_key`,  ' +
+	            '    `sdpid`.`hmac_key` ' +
+	            'FROM `gateway` ' +
+	            '    JOIN `service_gateway` ' +
+	            '        ON `service_gateway`.`gateway_sdpid` = `gateway`.`sdpid` ' +
+	            '    JOIN `sdpid_service` ' +
+	            '        ON `sdpid_service`.`service_id` = `service_gateway`.`service_id` ' +
+	            '    JOIN `sdpid` ' +
+	            '        ON `sdpid`.`sdpid` = `sdpid_service`.`sdpid` ' +
+	            'WHERE `sdpid`.`valid` = 1 AND `gateway`.`sdpid` IN (?) ' +
+	            'ORDER BY gatewaySdpId, clientSdpId ',
+	            [gatewaySdpIdList],
+	            function (error, rows, fields) {
+	                connection.removeListener('error', databaseErrorCallback);
+	                connection.release();
+	                if(error) {
+	                    console.error("Access data refresh query returned error: " + error);
+	                    //setTimeout(checkDatabaseForUpdates, config.databaseMonitorInterval, currentInterval);
+	                    return;
+	                }
+	                
+	                if(rows.length == 0) {
+	                    console.log("No relevant gateways to notify regarding access data refresh.");
+	                    //setTimeout(checkDatabaseForUpdates, config.databaseMonitorInterval, currentInterval);
+	                    return;
+	                }
+	                
+	                var data = [];
+	                var dataIdx = 0;
+	                var thisRow = rows[0];
+	                var currentGatewaySdpId = 0; 
+	                var currentClientSdpId = 0;
+	                var gatewaySocket = null;
+	                
+	                for(var rowIdx = 0; rowIdx < rows.length; rowIdx++) {
+	                    thisRow = rows[rowIdx];
+	                    
+	                    // if we hit a new gateway, start fresh
+	                    if(thisRow.gatewaySdpId != currentGatewaySdpId) {
+	                        currentGatewaySdpId = thisRow.gatewaySdpId;
+	                        data = [];
+	                        currentClientSdpId = 0;
+	                        
+	                        // get the right socket
+	                        gatewaySocket = null;
+	                        for(var idx = 0; idx < connectedGateways.length; idx++) {
+	                            if(connectedGateways[idx].sdpId == currentGatewaySdpId) {
+	                                gatewaySocket = connectedGateways[idx].socket;
+	                                break;
+	                            }
+	                        }
+	                        
+	                        if(!gatewaySocket) {
+	                            console.error("Preparing to send access refresh to gateway with SDP ID " +gatewaySdpId+
+	                                          ", but socket not found.");
+	                            
+	                            // skip past all rows with this gateway sdp id
+	                            while( (rowIdx + 1) < rows.length &&
+	                                   rows[rowIdx + 1].gatewaySdpId == currentGatewaySdpId) {
+	                                rowIdx++;
+	                            }
+	                            continue;
+	                        }
+	                    } 
+	                    
+	                    if(thisRow.clientSdpId != currentClientSdpId) {
+	                        currentClientSdpId = thisRow.clientSdpId;
+	                        data.push({
+	                            sdp_client_id: thisRow.clientSdpId,
+	                            source: "ANY",
+	                            open_ports: thisRow.protocol_port,
+	                            key_base64: thisRow.encrypt_key,
+	                            hmac_key_base64: thisRow.hmac_key
+	                        });
+	                    } else {
+	                        data[dataIdx].open_ports += ", " + thisRow.protocol_port;
+	                    }
+	
+	                    dataIdx = data.length - 1;
+	
+	                    // if this is the last data row or the next is a different gateway
+	                    if( (rowIdx + 1) == rows.length || 
+	                        rows[rowIdx + 1].gatewaySdpId != currentGatewaySdpId ) {
+	                        
+	                        // send off this gateway's data
+	                        if(config.debug) {
+	                            console.log("Access refresh data to send to "+currentGatewaySdpId+": \n", data);
+	                        }
+	                        
+	                        console.log("Sending access_refresh message to SDP ID " + currentGatewaySdpId);
+	                
+	                        gatewaySocket.write(
+	                            JSON.stringify({
+	                                action: 'access_refresh',
+	                                data
+	                            })
+	                        );
+	                        
+	                    } // END IF TIME TO SEND THIS GATE'S DATA
+	
+	                } // END QUERY DATA FOR LOOP
+	                
+	        
+	
+	            } // END QUERY CALLBACK FUNCTION
+	
+	        );  // END QUERY DEFINITION
+	    
+	    }  // END FUNCTION sendAllGatewaysAccessRefresh 
+
+    });  // END db.getConnection
+    
+}  // END FUNCTION checkDatabaseForUpdates
+
+
 
 function sdpQueryException(sdpId, entries) {
-  this.name = "SdpQueryException";
-  this.message = "SDP ID " + sdpId + " query returned " + entries + " entries";
+    this.name = "SdpQueryException";
+    this.message = "SDP ID " + sdpId + " query returned " + entries + " entries";
 }
 
 function sdpConfigException(configName, correctiveMessage) {
-  this.name = "SdpConfigException";
-  this.message = "Invalid entry for " + configName + "\n" + correctiveMessage;
+    this.name = "SdpConfigException";
+    this.message = "Invalid entry for " + configName + "\n" + correctiveMessage;
 }
 
 
