@@ -13,6 +13,14 @@ module.exports = {
 	// after a successful credential update
 	'keepClientsConnected': true,
 
+	// allow legacy access request type
+	// Legacy access request means the SPA packet specifies
+	// the port to open along with detailed NAT instructions
+	// if applicable. This mode is not secure because the
+	// client can be NAT'ed to anywhere it requests if NAT
+	// is enabled.
+	'allowLegacyAccessRequests': false,
+
 	// can create these using ./setup/create-certs.sh
 	'serverCert': './path/server.crt',
 	'serverKey':  './path/server.key',
@@ -64,5 +72,6 @@ module.exports = {
     
     // interval (milliseconds) to check database for changes
     // that require sending updates to gateways
-    'databaseMonitorInterval': 3000
+    'databaseMonitorInterval': 3000,
+    
 };
