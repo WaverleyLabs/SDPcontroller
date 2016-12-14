@@ -547,6 +547,12 @@ function startServer() {
                     gatewaySdpIdList.push(connectedGateways[idx].sdpId);
                 }
                 
+                if(gatewaySdpIdList.length < 1)
+                {
+                    console.log("No relevant gateways to notify regarding credential update to SDP ID "+memberDetails.sdpid);
+                    return;
+                }
+                
                 if(config.allowLegacyAccessRequests)
                 {
                     connection.query(
@@ -1827,6 +1833,12 @@ function checkDatabaseForUpdates(currentInterval) {
                     gatewaySdpIdList.push(connectedGateways[idx].sdpId);
                 }
 
+                if(gatewaySdpIdList.length < 1)
+                {
+                    console.log("No relevant gateways to notify regarding database update.");
+                    return;
+                }
+                
                 if(doServiceRefresh)
                 {
                     // this will call the access refresh function when it's done
