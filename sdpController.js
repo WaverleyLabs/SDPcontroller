@@ -220,7 +220,7 @@ function startServer() {
             socket.setTimeout(config.socketTimeout, function() {
                 console.error("Connection to SDP ID " + sdpId + ", connection ID " + connectionId + " has timed out. Disconnecting.");
                 if(memberDetails.type === 'gateway') {
-                    removeOpenConnections(connectionId)
+                    removeOpenConnections(connectionId);
                 }
                 removeFromConnectionList(memberDetails, connectionId);
             });
@@ -233,13 +233,18 @@ function startServer() {
         socket.on('end', function () {
             console.log("Connection to SDP ID " + sdpId + ", connection ID " + connectionId + " closed.");
             if(memberDetails.type === 'gateway') {
-                removeOpenConnections(connectionId)
+                removeOpenConnections(connectionId);
             }
             removeFromConnectionList(memberDetails, connectionId);
         });
         
         socket.on('error', function (error) {
             console.error(error);
+            if(memberDetails.type === 'gateway') {
+                removeOpenConnections(connectionId);
+            }
+            removeFromConnectionList(memberDetails, connectionId);
+            socket.end();
         });
         
         // Find sdpId in the database
@@ -487,8 +492,8 @@ function startServer() {
                     expires.setMilliseconds(0);
                     
                     newKeys = {
-                        encryption_key: data.encryption_key,
-                        hmac_key: data.hmac_key,
+                        spa_encryption_key_base64: data.spa_encryption_key_base64,
+                        spa_hmac_key_base64: data.spa_hmac_key_base64,
                         updated,
                         expires
                     };
@@ -797,22 +802,22 @@ function startServer() {
             if(open_ports)
             {
                 var data = [{
-                    sdp_client_id: clientSdpId,
+                    sdp_id: clientSdpId,
                     source: "ANY",
                     service_list: service_list,
                     open_ports: open_ports,
-                    key_base64: encKey,
-                    hmac_key_base64: hmacKey
+                    spa_encryption_key_base64: encKey,
+                    spa_hmac_key_base64: hmacKey
                 }];
             }
             else
             {
                 var data = [{
-                    sdp_client_id: clientSdpId,
+                    sdp_id: clientSdpId,
                     source: "ANY",
                     service_list: service_list,
-                    key_base64: encKey,
-                    hmac_key_base64: hmacKey
+                    spa_encryption_key_base64: encKey,
+                    spa_hmac_key_base64: hmacKey
                 }];
             }
             
@@ -1069,12 +1074,12 @@ function startServer() {
                                 if(thisRow.sdpid != currentSdpId) {
                                     currentSdpId = thisRow.sdpid;
                                     data.push({
-                                        sdp_client_id: thisRow.sdpid,
+                                        sdp_id: thisRow.sdpid,
                                         source: "ANY",
                                         service_list: thisRow.service_id.toString(),
                                         open_ports: thisRow.protocol + "/" +thisRow.port,
-                                        key_base64: thisRow.encrypt_key,
-                                        hmac_key_base64: thisRow.hmac_key
+                                        spa_encryption_key_base64: thisRow.encrypt_key,
+                                        spa_hmac_key_base64: thisRow.hmac_key
                                     });
                                 } else {
                                     data[dataIdx].service_list += ", " + thisRow.service_id.toString();
@@ -1160,11 +1165,11 @@ function startServer() {
                                 if(thisRow.sdpid != currentSdpId) {
                                     currentSdpId = thisRow.sdpid;
                                     data.push({
-                                        sdp_client_id: thisRow.sdpid,
+                                        sdp_id: thisRow.sdpid,
                                         source: "ANY",
                                         service_list: thisRow.service_id.toString(),
-                                        key_base64: thisRow.encrypt_key,
-                                        hmac_key_base64: thisRow.hmac_key
+                                        spa_encryption_key_base64: thisRow.encrypt_key,
+                                        spa_hmac_key_base64: thisRow.hmac_key
                                     });
                                 } else {
                                     data[dataIdx].service_list += ", " + thisRow.service_id.toString();
@@ -1507,8 +1512,8 @@ function startServer() {
     
         // store generated keys in database
         function storeKeysInDatabase() {
-            if (newKeys.hasOwnProperty('encryption_key') && 
-                newKeys.hasOwnProperty('hmac_key')) 
+            if (newKeys.hasOwnProperty('spa_encryption_key_base64') && 
+                newKeys.hasOwnProperty('spa_hmac_key_base64')) 
             {
                 if(config.debug)
                     console.log("Found the new keys to store in database for SDP ID "+sdpId);
@@ -1546,8 +1551,8 @@ function startServer() {
                         'UPDATE `sdpid` SET ' +
                         '`encrypt_key` = ?, `hmac_key` = ?, ' +
                         '`last_cred_update` = ?, `cred_update_due` = ? WHERE `sdpid` = ?', 
-                        [newKeys.encryption_key,
-                         newKeys.hmac_key,
+                        [newKeys.spa_encryption_key_base64,
+                         newKeys.spa_hmac_key_base64,
                          newKeys.updated,
                          newKeys.expires,
                          memberDetails.sdpid],
@@ -2078,12 +2083,12 @@ function sendAllGatewaysAccessRefresh(connection, databaseErrorCallback, gateway
                     if(thisRow.clientSdpId != currentClientSdpId) {
                         currentClientSdpId = thisRow.clientSdpId;
                         data.push({
-                            sdp_client_id: thisRow.clientSdpId,
+                            sdp_id: thisRow.clientSdpId,
                             source: "ANY",
                             service_list: thisRow.service_id.toString(),
                             open_ports: thisRow.protocol + "/" + thisRow.port,
-                            key_base64: thisRow.encrypt_key,
-                            hmac_key_base64: thisRow.hmac_key
+                            spa_encryption_key_base64: thisRow.encrypt_key,
+                            spa_hmac_key_base64: thisRow.hmac_key
                         });
                     } else {
                         data[dataIdx].service_list += ", " + thisRow.service_id.toString();
@@ -2214,11 +2219,11 @@ function sendAllGatewaysAccessRefresh(connection, databaseErrorCallback, gateway
                     if(thisRow.clientSdpId != currentClientSdpId) {
                         currentClientSdpId = thisRow.clientSdpId;
                         data.push({
-                            sdp_client_id: thisRow.clientSdpId,
+                            sdp_id: thisRow.clientSdpId,
                             source: "ANY",
                             service_list: thisRow.service_id.toString(),
-                            key_base64: thisRow.encrypt_key,
-                            hmac_key_base64: thisRow.hmac_key
+                            spa_encryption_key_base64: thisRow.encrypt_key,
+                            spa_hmac_key_base64: thisRow.hmac_key
                         });
                     } else {
                         data[dataIdx].service_list += ", " + thisRow.service_id.toString();

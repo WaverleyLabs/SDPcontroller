@@ -175,7 +175,7 @@ function startCredGenProcess() {
         		console.log("Credential Maker returned without error.");
         	
             // got credentials, save stuff
-        	fs.writeFile("./"+sdpId+".crt", data.tls_client_cert, function(err) {
+        	fs.writeFile("./"+sdpId+".crt", data.tls_cert, function(err) {
         	    if(err) {
                 	console.error(err);
                     console.error("Failed to write cert file. Exiting.");
@@ -186,7 +186,7 @@ function startCredGenProcess() {
         	    console.log("The cert file was saved!");
         	});
             
-        	fs.writeFile("./"+sdpId+".key", data.tls_client_key, function(err) {
+        	fs.writeFile("./"+sdpId+".key", data.tls_key, function(err) {
         	    if(err) {
                 	console.error(err);
                     console.error("Failed to write key file. Exiting.");
@@ -198,8 +198,8 @@ function startCredGenProcess() {
         	});
             
         	fs.writeFile("./"+sdpId+".spa_keys", 
-        					 "KEY_BASE64       " + data.encryption_key + "\n" +
-        					 "HMAC_KEY_BASE64  " + data.hmac_key + "\n", 
+        					 "KEY_BASE64       " + data.spa_encryption_key_base64 + "\n" +
+        					 "HMAC_KEY_BASE64  " + data.spa_hmac_key_base64 + "\n", 
         					 function(err) {
         	    if(err) {
                 	console.error(err);
@@ -221,8 +221,8 @@ function startCredGenProcess() {
             expires.setMilliseconds(0);
             
             newKeys = {
-                encryption_key: data.encryption_key,
-                hmac_key: data.hmac_key,
+                spa_encryption_key_base64: data.spa_encryption_key_base64,
+                spa_hmac_key_base64: data.spa_hmac_key_base64,
                 updated,
                 expires
             };
@@ -236,8 +236,8 @@ function startCredGenProcess() {
 
 
 function storeKeysInDatabase() {
-    if (newKeys.hasOwnProperty('encryption_key') && 
-        newKeys.hasOwnProperty('hmac_key')) 
+    if (newKeys.hasOwnProperty('spa_encryption_key_base64') && 
+        newKeys.hasOwnProperty('spa_hmac_key_base64')) 
     {
         if(config.debug)
             console.log("Found the new keys to store in database for SDP ID "+sdpId);
@@ -252,8 +252,8 @@ function storeKeysInDatabase() {
                 'UPDATE `sdpid` SET ' +
                 '`encrypt_key` = ?, `hmac_key` = ?, ' +
                 '`last_cred_update` = ?, `cred_update_due` = ? WHERE `sdpid` = ?', 
-                [newKeys.encryption_key,
-                 newKeys.hmac_key,
+                [newKeys.spa_encryption_key_base64,
+                 newKeys.spa_hmac_key_base64,
                  newKeys.updated,
                  newKeys.expires,
                  memberDetails.sdpid],

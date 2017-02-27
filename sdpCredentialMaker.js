@@ -91,10 +91,10 @@ credentialMaker.prototype.getNewCredentials =	function(memberDetails, callback) 
     console.log("New credentials successfully created for sdp member " + memberDetails.sdpid);
     
     var credentials = {
-      encryption_key: creds.encryptionKey,
-      hmac_key: creds.hmacKey,
-      tls_client_key: creds.cert.clientKey,
-      tls_client_cert: creds.cert.certificate
+      spa_encryption_key_base64: creds.encryptionKey,
+      spa_hmac_key_base64: creds.hmacKey,
+      tls_key: creds.cert.clientKey,
+      tls_cert: creds.cert.certificate
     };
 
     callback(null, credentials);
