@@ -25,6 +25,7 @@ var fs     = require('fs');
 var mysql  = require("mysql");
 var credentialMaker = require('./sdpCredentialMaker');
 var prompt = require("prompt");
+var util   = require('util');
 
 // If the user specified the config path, get it
 if(process.argv.length > 2) {
@@ -39,6 +40,7 @@ if(process.argv.length > 2) {
     var config = require('./config.js');
 }
 
+const MSG_SIZE_FIELD_LEN = 4;
 
 const encryptionKeyLenMin = 4;
 const encryptionKeyLenMax = 32;
@@ -205,6 +207,14 @@ function startServer() {
         var newKeys = null;
         var accessRefreshDue = false;
         var connectionId = nextConnectionId;
+        var expectedMessageSize = 0;
+        var totalSizeBytesReceived = 0;
+        var sizeBytesNeeded = 0;
+        var dataBytesToRead = 0;
+        var totalMessageBytesReceived = 0;
+        var sizeBuffer = Buffer.allocUnsafe(MSG_SIZE_FIELD_LEN);
+        var messageBuffer = Buffer.allocUnsafe(0);
+
         if(Number.MAX_SAFE_INTEGER == connectionId)   // 9007199254740991
             nextConnectionId = 1;
         else
@@ -219,15 +229,67 @@ function startServer() {
         if(config.socketTimeout) 
             socket.setTimeout(config.socketTimeout, function() {
                 console.error("Connection to SDP ID " + sdpId + ", connection ID " + connectionId + " has timed out. Disconnecting.");
-                if(memberDetails.type === 'gateway') {
-                    removeOpenConnections(connectionId);
-                }
-                removeFromConnectionList(memberDetails, connectionId);
+                //if(memberDetails.type === 'gateway') {
+                //    removeOpenConnections(connectionId);
+                //}
+                //removeFromConnectionList(memberDetails, connectionId);
             });
         
         // Handle incoming requests from members
         socket.on('data', function (data) {
-            processMessage(data);
+            while(data.length) {
+                // have we set the full message size variable yet
+                if(expectedMessageSize == 0) {
+                    sizeBytesNeeded = MSG_SIZE_FIELD_LEN - totalSizeBytesReceived;
+
+                    // exceptional case, so few bytes arrived
+                    // not enough data to read expected message size
+                    if( data.length < sizeBytesNeeded ) {
+                        data.copy(sizeBuffer, totalSizeBytesReceived, 0, data.length);
+                        totalSizeBytesReceived += data.length;
+                        data = Buffer.allocUnsafe(0);
+                        return;
+                    }
+                    
+                    data.copy(sizeBuffer, totalSizeBytesReceived, 0, sizeBytesNeeded);
+                    totalSizeBytesReceived = MSG_SIZE_FIELD_LEN;
+                    expectedMessageSize = sizeBuffer.readUInt32BE(0);
+
+                    // time to reset the buffer
+                    messageBuffer = Buffer.allocUnsafe(0);
+                }
+
+                // if there's more data in the received buffer besides the message size field (i.e. actual message contents)
+                if( data.length > sizeBytesNeeded ) {
+
+                    // if there are fewer bytes than what's needed to complete the message
+                    if( (data.length - sizeBytesNeeded) < (expectedMessageSize - totalMessageBytesReceived) ){
+                        // then read from after the size field to end of the received buffer
+                        dataBytesToRead = data.length - sizeBytesNeeded;
+                    }
+                    else {
+                        dataBytesToRead = expectedMessageSize - totalMessageBytesReceived;
+                    }
+                    
+                    totalMessageBytesReceived += dataBytesToRead;
+                    messageBuffer = Buffer.concat([messageBuffer, 
+                        data.slice(sizeBytesNeeded, sizeBytesNeeded+dataBytesToRead)],
+                        totalMessageBytesReceived);
+                }
+
+                // if the message is now complete, process
+                if(totalMessageBytesReceived == expectedMessageSize) {
+                    expectedMessageSize = 0;
+                    totalSizeBytesReceived = 0;
+                    totalMessageBytesReceived = 0;
+                    processMessage(messageBuffer);
+                }
+
+                data = data.slice(sizeBytesNeeded+dataBytesToRead);
+                sizeBytesNeeded = 0;
+                dataBytesToRead = 0;
+
+            }
         });
         
         socket.on('end', function () {
@@ -251,7 +313,7 @@ function startServer() {
         db.getConnection(function(error,connection){
             if(error){
                 console.error("Error connecting to database: " + error);
-                socket.end(JSON.stringify({action: 'database_error'}));
+                writeToSocket(socket, JSON.stringify({action: 'database_error'}), true);
                 return;
             }
             
@@ -271,16 +333,16 @@ function startServer() {
                 if (error) {
                     console.error("Query returned error: " + error);
                     console.error(error);
-                    socket.end(JSON.stringify({action: 'database_error'}));
+                    writeToSocket(socket, JSON.stringify({action: 'database_error'}), true);
                 } else if (rows.length < 1) {
                     console.error("SDP ID not found, notifying and disconnecting");
-                    socket.end(JSON.stringify({action: 'unknown_sdp_id'}));
+                    writeToSocket(socket, JSON.stringify({action: 'unknown_sdp_id'}), true);
                 } else if (rows.length > 1) {
                     console.error("Query returned multiple rows for SDP ID: " + sdpId);
-                    socket.end(JSON.stringify({action: 'database_error'}));
+                    writeToSocket(socket, JSON.stringify({action: 'database_error'}), true);
                 } else if (rows[0].valid == 0) {
                     console.error("SDP ID " + sdpId+" disabled. Disconnecting.");
-                    socket.end(JSON.stringify({action: 'sdpid_unauthorized'}));
+                    writeToSocket(socket, JSON.stringify({action: 'sdpid_unauthorized'}), true);
                 } else {
                 
                     memberDetails = rows[0];
@@ -298,8 +360,9 @@ function startServer() {
                         if(destList[idx].sdpId == memberDetails.sdpid) {
                             // this next call triggers socket.on('end'...
                             // which removes the entry from the connection list
-                            destList[idx].socket.end(
-                                JSON.stringify({action: 'duplicate_connection'})
+                            writeToSocket(destList[idx].socket,
+                                JSON.stringify({action: 'duplicate_connection'}),
+                                true
                             );
                             
                             // the check above means there should never be more than 1 match
@@ -337,7 +400,7 @@ function startServer() {
                     if(now > memberDetails.cred_update_due) {
                         handleCredentialUpdate();
                     } else {
-                        socket.write(JSON.stringify({action: 'credentials_good'}));
+                        writeToSocket(socket, JSON.stringify({action: 'credentials_good'}), false);
                     }
                   
                 }  
@@ -346,7 +409,7 @@ function startServer() {
           
         });
     
-      
+        
         // Parse SDP messages 
         function processMessage(data) {
             if(config.debug) {
@@ -423,11 +486,11 @@ function startServer() {
                 console.log("Sending " +config.testManyMessages+ " extra messages first for testing rather than just 1");
                 var jsonMsgString = JSON.stringify(keepAliveMessage);
                 for(var ii = 0; ii < config.testManyMessages; ii++) {
-                    socket.write(jsonMsgString);
+                    writeToSocket(socket, jsonMsgString, false);
                 }
             }
             
-            socket.write(JSON.stringify(keepAliveMessage));
+            writeToSocket(socket, JSON.stringify(keepAliveMessage), false);
             //console.log("keepAlive message written to socket");
         
         }
@@ -461,7 +524,7 @@ function startServer() {
                                 ' times. Disconnecting.'
                         };
                         
-                        socket.end(JSON.stringify(credErrMessage));
+                        writeToSocket(socket, JSON.stringify(credErrMessage), true);
                         return;
                     }
                     
@@ -474,7 +537,7 @@ function startServer() {
                 
                     console.log("Sending credential_update_error message to SDP ID " + 
                         memberDetails.sdpid + ", failed attempt: " + credentialMakerTries);
-                    socket.write(JSON.stringify(credErrMessage));
+                    writeToSocket(socket, JSON.stringify(credErrMessage), false);
                 
                 } else {
                     // got credentials, send them over
@@ -500,7 +563,7 @@ function startServer() {
                     
                     console.log("Sending credential_update message to SDP ID " + memberDetails.sdpid + ", attempt: " + dataTransmitTries);
                     dataTransmitTries++;
-                    socket.write(JSON.stringify(newCredMessage));
+                    writeToSocket(socket, JSON.stringify(newCredMessage), false);
                 
                 }
             
@@ -526,11 +589,12 @@ function startServer() {
                                   "to notify gateways of a client's credential update: " + error);
                     
                     // notify the requestor of our database troubles
-                    socket.write(
+                    writeToSocket(socket, 
                         JSON.stringify({
                             action: 'notify_gateways_error',
                             data: 'Database unreachable. Gateways not notified of credential update.'
-                        })
+                        }), 
+                        false
                     );
                     
                     return;
@@ -607,11 +671,12 @@ function startServer() {
                             connection.release();
                             if(error) {
                                 console.error("Access data query returned error: " + error);
-                                socket.write(
+                                writeToSocket(socket, 
                                     JSON.stringify({
                                         action: 'notify_gateways_error',
                                         data: 'Database error. Gateways not notified of credential update.'
-                                    })
+                                    }), 
+                                    false
                                 );
                                 return;
                             }
@@ -714,11 +779,12 @@ function startServer() {
                             connection.release();
                             if(error) {
                                 console.error("Access data query returned error: " + error);
-                                socket.write(
+                                writeToSocket(socket, 
                                     JSON.stringify({
                                         action: 'notify_gateways_error',
                                         data: 'Database error. Gateways not notified of credential update.'
-                                    })
+                                    }), 
+                                    false
                                 );
                                 return;
                             }
@@ -827,11 +893,12 @@ function startServer() {
             
             console.log("Sending access_update message to SDP ID " + gatewaySdpId);
         
-            gatewaySocket.write(
+            writeToSocket(gatewaySocket,
                 JSON.stringify({
                     action: 'access_update',
                     data
-                })
+                }), 
+                false
             );
             
             
@@ -881,11 +948,12 @@ function startServer() {
                     console.error("Error connecting to database: " + error);
                     
                     // notify the requestor of our database troubles
-                    socket.write(
+                    writeToSocket(socket, 
                         JSON.stringify({
                             action: 'service_refresh_error',
                             data: 'Database unreachable. Try again soon.'
-                        })
+                        }), 
+                        false
                     );
                     
                     return;
@@ -915,11 +983,12 @@ function startServer() {
                         connection.release();
                         if(error) {
                             console.error("Service data query returned error: " + error);
-                            socket.write(
+                            writeToSocket(socket, 
                                 JSON.stringify({
                                     action: 'service_refresh_error',
                                     data: 'Database error. Try again soon.'
-                                })
+                                }), 
+                                false
                             );
                             return;
                         }
@@ -952,11 +1021,12 @@ function startServer() {
                         console.log("Sending service_refresh message to SDP ID " + 
                             memberDetails.sdpid + ", attempt: " + dataTransmitTries);
                 
-                        socket.write(
+                        writeToSocket(socket, 
                             JSON.stringify({
                                 action: 'service_refresh',
                                 data
-                            })
+                            }), 
+                            false
                         );
                         
                     } // END QUERY CALLBACK FUNCTION
@@ -993,11 +1063,12 @@ function startServer() {
                     console.error("Error connecting to database: " + error);
                     
                     // notify the requestor of our database troubles
-                    socket.write(
+                    writeToSocket(socket, 
                         JSON.stringify({
                             action: 'access_refresh_error',
                             data: 'Database unreachable. Try again soon.'
-                        })
+                        }), 
+                        false
                     );
                     
                     return;
@@ -1056,11 +1127,12 @@ function startServer() {
                             connection.release();
                             if(error) {
                                 console.error("Access data query returned error: " + error);
-                                socket.write(
+                                writeToSocket(socket, 
                                     JSON.stringify({
                                         action: 'access_refresh_error',
                                         data: 'Database error. Try again soon.'
-                                    })
+                                    }), 
+                                    false
                                 );
                                 return;
                             }
@@ -1094,12 +1166,13 @@ function startServer() {
                             dataTransmitTries++;
                             console.log("Sending access_refresh message to SDP ID " + 
                                 memberDetails.sdpid + ", attempt: " + dataTransmitTries);
-                    
-                            socket.write(
+
+                            writeToSocket(socket, 
                                 JSON.stringify({
                                     action: 'access_refresh',
                                     data
-                                })
+                                }), 
+                                false
                             );
                             
                         } // END QUERY CALLBACK FUNCTION
@@ -1147,11 +1220,12 @@ function startServer() {
                             connection.release();
                             if(error) {
                                 console.error("Access data query returned error: " + error);
-                                socket.write(
+                                writeToSocket(socket, 
                                     JSON.stringify({
                                         action: 'access_refresh_error',
                                         data: 'Database error. Try again soon.'
-                                    })
+                                    }), 
+                                    false
                                 );
                                 return;
                             }
@@ -1184,11 +1258,15 @@ function startServer() {
                             console.log("Sending access_refresh message to SDP ID " + 
                                 memberDetails.sdpid + ", attempt: " + dataTransmitTries);
                     
-                            socket.write(
+                            console.log("ACCESS DATA:")
+                            console.log(util.inspect(data, false, null));
+                    
+                            writeToSocket(socket, 
                                 JSON.stringify({
                                     action: 'access_refresh',
                                     data
-                                })
+                                }), 
+                                false
                             );
                             
                         } // END QUERY CALLBACK FUNCTION
@@ -1612,7 +1690,7 @@ function startServer() {
                 for(var myKey in badMessageMessage) {
                     console.log("key: " + myKey + "   value: " + badMessageMessage[myKey]);
                 }
-                socket.write(JSON.stringify(badMessageMessage));
+                writeToSocket(socket, JSON.stringify(badMessageMessage), false);
             
             } else {
             
@@ -1630,6 +1708,19 @@ function startServer() {
     // Put a friendly message on the terminal of the server.
     console.log("SDP Controller running at port " + config.serverPort);
 }  // END function startServer
+
+
+function writeToSocket(theSocket, theMsg, endTheSocket) {
+    console.log("\n\nSENDING MESSAGE:\n"+theMsg);
+    var theMsg_buf = Buffer.allocUnsafe(MSG_SIZE_FIELD_LEN + theMsg.length);
+    theMsg_buf.writeUInt32BE(theMsg.length, 0);
+    theMsg_buf.write(theMsg, MSG_SIZE_FIELD_LEN);
+    theSocket.write(theMsg_buf);
+
+    if(endTheSocket) {
+        theSocket.end();
+    }
+}
 
 
 
@@ -1962,11 +2053,12 @@ function sendAllGatewaysServiceRefresh(connection, databaseErrorCallback, gatewa
                     
                     console.log("Sending service_refresh message to SDP ID " + currentGatewaySdpId);
             
-                    gatewaySocket.write(
+                    writeToSocket(gatewaySocket,
                         JSON.stringify({
                             action: 'service_refresh',
                             data
-                        })
+                        }),
+                        false
                     );
                     
                 } // END IF LAST ROW FOR THIS GATE
@@ -2108,11 +2200,12 @@ function sendAllGatewaysAccessRefresh(connection, databaseErrorCallback, gateway
                         
                         console.log("Sending access_refresh message to SDP ID " + currentGatewaySdpId);
                 
-                        gatewaySocket.write(
+                        writeToSocket(gatewaySocket,
                             JSON.stringify({
                                 action: 'access_refresh',
                                 data
-                            })
+                            }),
+                            false
                         );
                         
                     } // END IF LAST ROW FOR THIS GATE
@@ -2242,11 +2335,12 @@ function sendAllGatewaysAccessRefresh(connection, databaseErrorCallback, gateway
                         
                         console.log("Sending access_refresh message to SDP ID " + currentGatewaySdpId);
                 
-                        gatewaySocket.write(
+                        writeToSocket(gatewaySocket,
                             JSON.stringify({
                                 action: 'access_refresh',
                                 data
-                            })
+                            }),
+                            false
                         );
                         
                     } // END IF LAST ROW FOR THIS GATE
