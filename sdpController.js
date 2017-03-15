@@ -25,7 +25,6 @@ var fs     = require('fs');
 var mysql  = require("mysql");
 var credentialMaker = require('./sdpCredentialMaker');
 var prompt = require("prompt");
-var util   = require('util');
 
 // If the user specified the config path, get it
 if(process.argv.length > 2) {
@@ -1258,9 +1257,6 @@ function startServer() {
                             console.log("Sending access_refresh message to SDP ID " + 
                                 memberDetails.sdpid + ", attempt: " + dataTransmitTries);
                     
-                            console.log("ACCESS DATA:")
-                            console.log(util.inspect(data, false, null));
-                    
                             writeToSocket(socket, 
                                 JSON.stringify({
                                     action: 'access_refresh',
@@ -1711,7 +1707,8 @@ function startServer() {
 
 
 function writeToSocket(theSocket, theMsg, endTheSocket) {
-    console.log("\n\nSENDING MESSAGE:\n"+theMsg);
+    if(config.debug)
+        console.log("\n\nSENDING MESSAGE:\n"+theMsg+"\n\n");
     var theMsg_buf = Buffer.allocUnsafe(MSG_SIZE_FIELD_LEN + theMsg.length);
     theMsg_buf.writeUInt32BE(theMsg.length, 0);
     theMsg_buf.write(theMsg, MSG_SIZE_FIELD_LEN);
