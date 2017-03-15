@@ -1,8 +1,7 @@
 #! /usr/bin/env bash
 
 # Create the CA Key and Certificate for signing Client Certs
-openssl genrsa -des3 -out ca.key 4096
-openssl req -new -x509 -days 365 -key ca.key -out ca.crt
+openssl req -x509 -sha256 -nodes -days 365 -newkey rsa:4096 -keyout ca.key -out ca.crt
 
 # Create the Server Key, CSR, and Certificate
 openssl genrsa -out server.key 1024
