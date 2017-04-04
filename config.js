@@ -53,6 +53,7 @@ module.exports = {
 	// database options
 	'dbHost': 'localhost',
 	'dbUser': 'sdp_controller',
+	'dbPasswordRequired': true,
 
 	// to be prompted for a password, delete this field or
 	// set it to a null string using '' (that's 2 single 
