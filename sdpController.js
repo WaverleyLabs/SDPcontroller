@@ -339,7 +339,7 @@ function startServer() {
                 } else if (rows.length > 1) {
                     console.error("Query returned multiple rows for SDP ID: " + sdpId);
                     writeToSocket(socket, JSON.stringify({action: 'database_error'}), true);
-                } else if (rows[0].valid == 0) {
+                } else if (rows[0].enabled == 0) {
                     console.error("SDP ID " + sdpId+" disabled. Disconnecting.");
                     writeToSocket(socket, JSON.stringify({action: 'sdpid_unauthorized'}), true);
                 } else {
@@ -637,6 +637,8 @@ function startServer() {
                         '    JOIN `sdpid` ' +
                         '        ON `sdpid`.`sdpid` = `sdpid_service`.`sdpid` ' +
                         'WHERE ' +
+                        '    `service_gateway`.`enabled` = 1 AND ' +
+                        '    `sdpid_service`.`enabled` = 1 AND ' +
                         '    `service_gateway`.`gateway_sdpid` IN (?) AND ' +
                         '    `sdpid`.`sdpid` = ? )' +
                         'UNION ' +
@@ -657,9 +659,12 @@ function startServer() {
                         '    JOIN `sdpid` ' +
                         '        ON `sdpid`.`user_id` = `user_group`.`user_id` ' +
                         'WHERE ' +
+                        '    `service_gateway`.`enabled` = 1 AND ' +
+                        '    `group_service`.`enabled` = 1 AND ' +
+                        '    `group`.`enabled` = 1 AND ' +
+                        '    `user_group`.`enabled` = 1 AND ' +
                         '    `service_gateway`.`gateway_sdpid` IN (?) AND ' +
-                        '    `sdpid`.`sdpid` = ? AND ' +
-                        '    `group`.`valid` = 1 )' +
+                        '    `sdpid`.`sdpid` = ? )' +
                         'ORDER BY `gateway_sdpid` ',
                         [gatewaySdpIdList, 
                          memberDetails.sdpid, 
@@ -747,6 +752,8 @@ function startServer() {
                         '    JOIN `sdpid` ' +
                         '        ON `sdpid`.`sdpid` = `sdpid_service`.`sdpid` ' +
                         'WHERE ' +
+                        '    `service_gateway`.`enabled` = 1 AND ' +
+                        '    `sdpid_service`.`enabled` = 1 AND ' +
                         '    `service_gateway`.`gateway_sdpid` IN (?) AND ' +
                         '    `sdpid`.`sdpid` = ? )' +
                         'UNION ' +
@@ -765,9 +772,12 @@ function startServer() {
                         '    JOIN `sdpid` ' +
                         '        ON `sdpid`.`user_id` = `user_group`.`user_id` ' +
                         'WHERE ' +
+                        '    `service_gateway`.`enabled` = 1 AND ' +
+                        '    `group_service`.`enabled` = 1 AND ' +
+                        '    `group`.`enabled` = 1 AND ' +
+                        '    `user_group`.`enabled` = 1 AND ' +
                         '    `service_gateway`.`gateway_sdpid` IN (?) AND ' +
-                        '    `sdpid`.`sdpid` = ? AND ' +
-                        '    `group`.`valid` = 1 )' +
+                        '    `sdpid`.`sdpid` = ? )' +
                         'ORDER BY `gateway_sdpid` ',
                         [gatewaySdpIdList, 
                          memberDetails.sdpid, 
@@ -975,7 +985,9 @@ function startServer() {
                     '    `service_gateway`.`nat_ip`, ' +
                     '    `service_gateway`.`nat_port` ' +
                     'FROM `service_gateway` ' +
-                    'WHERE `service_gateway`.`gateway_sdpid` = ? ',
+                    'WHERE ' +
+                    '    `service_gateway`.`enabled` = 1 AND ' +
+                    '    `service_gateway`.`gateway_sdpid` = ? ',
                     [memberDetails.sdpid],
                     function (error, rows, fields) {
                         connection.removeListener('error', databaseErrorCallback);
@@ -1097,7 +1109,11 @@ function startServer() {
                         '        ON `sdpid_service`.`service_id` = `service_gateway`.`service_id` ' +
                         '    JOIN `sdpid` ' +
                         '        ON `sdpid`.`sdpid` = `sdpid_service`.`sdpid` ' +
-                        'WHERE `sdpid`.`valid` = 1 AND `service_gateway`.`gateway_sdpid` = ? )' +
+                        'WHERE ' +
+                        '    `sdpid`.`enabled` = 1 AND ' +
+                        '    `sdpid_service`.`enabled` = 1 AND ' +
+                        '    `service_gateway`.`enabled` = 1 AND ' +
+                        '    `service_gateway`.`gateway_sdpid` = ? )' +
                         'UNION ' +
                         '(SELECT ' +
                         '    `sdpid`.`sdpid`,  ' +
@@ -1116,8 +1132,11 @@ function startServer() {
                         '    JOIN `sdpid` ' +
                         '        ON `sdpid`.`user_id` = `user_group`.`user_id` ' +
                         'WHERE ' +
-                        '    `sdpid`.`valid` = 1 AND ' +
-                        '    `group`.`valid` = 1 AND ' +
+                        '    `sdpid`.`enabled` = 1 AND ' +
+                        '    `group_service`.`enabled` = 1 AND ' +
+                        '    `service_gateway`.`enabled` = 1 AND ' +
+                        '    `group`.`enabled` = 1 AND ' +
+                        '    `user_group`.`enabled` = 1 AND ' +
                         '    `service_gateway`.`gateway_sdpid` = ? )' +
                         'ORDER BY `sdpid` ',
                         [memberDetails.sdpid, memberDetails.sdpid],
@@ -1192,7 +1211,11 @@ function startServer() {
                         '        ON `sdpid_service`.`service_id` = `service_gateway`.`service_id` ' +
                         '    JOIN `sdpid` ' +
                         '        ON `sdpid`.`sdpid` = `sdpid_service`.`sdpid` ' +
-                        'WHERE `sdpid`.`valid` = 1 AND `service_gateway`.`gateway_sdpid` = ? )' +
+                        'WHERE ' +
+                        '    `sdpid`.`enabled` = 1 AND ' +
+                        '    `sdpid_service`.`enabled` = 1 AND ' +
+                        '    `service_gateway`.`enabled` = 1 AND ' +
+                        '    `service_gateway`.`gateway_sdpid` = ? )' +
                         'UNION ' +
                         '(SELECT ' +
                         '    `sdpid`.`sdpid`,  ' +
@@ -1209,8 +1232,11 @@ function startServer() {
                         '    JOIN `sdpid` ' +
                         '        ON `sdpid`.`user_id` = `user_group`.`user_id` ' +
                         'WHERE ' +
-                        '    `sdpid`.`valid` = 1 AND ' +
-                        '    `group`.`valid` = 1 AND ' +
+                        '    `sdpid`.`enabled` = 1 AND ' +
+                        '    `group_service`.`enabled` = 1 AND ' +
+                        '    `service_gateway`.`enabled` = 1 AND ' +
+                        '    `group`.`enabled` = 1 AND ' +
+                        '    `user_group`.`enabled` = 1 AND ' +
                         '    `service_gateway`.`gateway_sdpid` = ? )' +
                         'ORDER BY `sdpid` ',
                         [memberDetails.sdpid, memberDetails.sdpid],
@@ -1372,7 +1398,7 @@ function startServer() {
                 console.log("Received connection update message:\n"+ 
                             "     Gateway SDP ID: %d \n"+
                             "   Connection count: %d \n",
-                            node.sdpId,
+                            memberDetails.sdpId,
                             message['data'].length);
             }
             
@@ -1892,8 +1918,7 @@ function checkDatabaseForUpdates(currentInterval) {
                 }
                 
                 if(rows.length == 0) {
-                    if(config.debug) console.log("No database updates found requiring access data refresh.");
-                    //console.log("No database updates found requiring access data refresh.");
+                    //if(config.debug) console.log("No database updates found requiring access data refresh.");
                     connection.removeListener('error', databaseErrorCallback);
                     connection.release();
                     setTimeout(checkDatabaseForUpdates, config.databaseMonitorInterval, currentInterval);
@@ -1968,7 +1993,9 @@ function sendAllGatewaysServiceRefresh(connection, databaseErrorCallback, gatewa
         '    `service_gateway`.`nat_ip`, ' +
         '    `service_gateway`.`nat_port` ' +
         'FROM `service_gateway` ' +
-        'WHERE `service_gateway`.`gateway_sdpid` IN (?) ' +
+        'WHERE ' +
+        '    `service_gateway`.`enabled` = 1 AND ' +
+        '    `service_gateway`.`gateway_sdpid` IN (?) ' +
         'ORDER BY gateway_sdpid ',
         [gatewaySdpIdList],
         function (error, rows, fields) {
@@ -2091,7 +2118,11 @@ function sendAllGatewaysAccessRefresh(connection, databaseErrorCallback, gateway
             '        ON `sdpid_service`.`service_id` = `service_gateway`.`service_id` ' +
             '    JOIN `sdpid` ' +
             '        ON `sdpid`.`sdpid` = `sdpid_service`.`sdpid` ' +
-            'WHERE `sdpid`.`valid` = 1 AND `service_gateway`.`gateway_sdpid` IN (?) )' +
+            'WHERE ' +
+            '    `sdpid`.`enabled` = 1 AND ' +
+            '    `sdpid_service`.`enabled` = 1 AND ' +
+            '    `service_gateway`.`enabled` = 1 AND ' +
+            '    `service_gateway`.`gateway_sdpid` IN (?) )' +
             'UNION ' +
             '(SELECT ' +
             '    `service_gateway`.`gateway_sdpid` as gatewaySdpId, ' +
@@ -2111,8 +2142,11 @@ function sendAllGatewaysAccessRefresh(connection, databaseErrorCallback, gateway
             '    JOIN `sdpid` ' +
             '        ON `sdpid`.`user_id` = `user_group`.`user_id` ' +
             'WHERE ' +
-            '    `sdpid`.`valid` = 1 AND ' +
-            '    `group`.`valid` = 1 AND ' +
+            '    `sdpid`.`enabled` = 1 AND ' +
+            '    `group_service`.`enabled` = 1 AND ' +
+            '    `service_gateway`.`enabled` = 1 AND ' +
+            '    `group`.`enabled` = 1 AND ' +
+            '    `user_group`.`enabled` = 1 AND ' +
             '    `service_gateway`.`gateway_sdpid` IN (?) )' +
             'ORDER BY gatewaySdpId, clientSdpId ',
             [gatewaySdpIdList, gatewaySdpIdList],
@@ -2230,7 +2264,11 @@ function sendAllGatewaysAccessRefresh(connection, databaseErrorCallback, gateway
             '        ON `sdpid_service`.`service_id` = `service_gateway`.`service_id` ' +
             '    JOIN `sdpid` ' +
             '        ON `sdpid`.`sdpid` = `sdpid_service`.`sdpid` ' +
-            'WHERE `sdpid`.`valid` = 1 AND `service_gateway`.`gateway_sdpid` IN (?) )' +
+            'WHERE ' +
+            '    `sdpid`.`enabled` = 1 AND ' +
+            '    `sdpid_service`.`enabled` = 1 AND ' +
+            '    `service_gateway`.`enabled` = 1 AND ' +
+            '    `service_gateway`.`gateway_sdpid` IN (?) )' +
             'UNION ' +
             '(SELECT ' +
             '    `service_gateway`.`gateway_sdpid` as gatewaySdpId, ' +
@@ -2248,8 +2286,11 @@ function sendAllGatewaysAccessRefresh(connection, databaseErrorCallback, gateway
             '    JOIN `sdpid` ' +
             '        ON `sdpid`.`user_id` = `user_group`.`user_id` ' +
             'WHERE ' +
-            '    `sdpid`.`valid` = 1 AND ' +
-            '    `group`.`valid` = 1 AND ' +
+            '    `sdpid`.`enabled` = 1 AND ' +
+            '    `group_service`.`enabled` = 1 AND ' +
+            '    `service_gateway`.`enabled` = 1 AND ' +
+            '    `group`.`enabled` = 1 AND ' +
+            '    `user_group`.`enabled` = 1 AND ' +
             '    `service_gateway`.`gateway_sdpid` IN (?) )' +
             'ORDER BY gatewaySdpId, clientSdpId ',
             [gatewaySdpIdList, gatewaySdpIdList],

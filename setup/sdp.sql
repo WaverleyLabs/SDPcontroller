@@ -20,13 +20,6 @@
 
 
 -- phpMyAdmin SQL Dump
--- version 4.0.10deb1
--- http://www.phpmyadmin.net
---
--- Host: localhost
--- Generation Time: Nov 07, 2016 at 06:34 AM
--- Server version: 5.5.52-0ubuntu0.14.04.1
--- PHP Version: 5.5.9-1ubuntu4.20
 
 SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";
 SET time_zone = "+00:00";
@@ -35,7 +28,7 @@ SET time_zone = "+00:00";
 /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
 /*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
 /*!40101 SET @OLD_COLLATION_CONNECTION=@@COLLATION_CONNECTION */;
-/*!40101 SET NAMES utf8 */;
+/*!40101 SET NAMES utf8mb4 */;
 
 --
 -- Database: `sdp`
@@ -50,7 +43,7 @@ USE `sdp`;
 --
 
 DROP TABLE IF EXISTS `closed_connection`;
-CREATE TABLE IF NOT EXISTS `closed_connection` (
+CREATE TABLE `closed_connection` (
   `gateway_sdpid` int(11) NOT NULL,
   `client_sdpid` int(11) NOT NULL,
   `service_id` int(11) NOT NULL,
@@ -83,7 +76,7 @@ CREATE TABLE IF NOT EXISTS `closed_connection` (
 --
 
 DROP TABLE IF EXISTS `controller`;
-CREATE TABLE IF NOT EXISTS `controller` (
+CREATE TABLE `controller` (
   `sdpid` int(11) NOT NULL,
   `name` varchar(1024) COLLATE utf8_bin NOT NULL,
   `address` varchar(4096) COLLATE utf8_bin NOT NULL COMMENT 'ip or url',
@@ -112,14 +105,14 @@ CREATE TABLE IF NOT EXISTS `controller` (
 --
 
 DROP TABLE IF EXISTS `environment`;
-CREATE TABLE IF NOT EXISTS `environment` (
+CREATE TABLE `environment` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `name` varchar(1024) COLLATE utf8_bin NOT NULL,
   `mobile` tinyint(1) NOT NULL,
   `os_group` enum('Android','iOS','Windows','OSX','Linux') COLLATE utf8_bin NOT NULL,
   `os_version` varchar(1024) COLLATE utf8_bin NOT NULL,
   PRIMARY KEY (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_bin AUTO_INCREMENT=1 ;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_bin;
 
 -- --------------------------------------------------------
 
@@ -128,7 +121,7 @@ CREATE TABLE IF NOT EXISTS `environment` (
 --
 
 DROP TABLE IF EXISTS `gateway`;
-CREATE TABLE IF NOT EXISTS `gateway` (
+CREATE TABLE `gateway` (
   `sdpid` int(11) NOT NULL,
   `name` varchar(1024) COLLATE utf8_bin NOT NULL,
   `address` varchar(1024) COLLATE utf8_bin NOT NULL COMMENT 'ip or url',
@@ -149,14 +142,14 @@ CREATE TABLE IF NOT EXISTS `gateway` (
 --
 
 DROP TABLE IF EXISTS `gateway_controller`;
-CREATE TABLE IF NOT EXISTS `gateway_controller` (
+CREATE TABLE `gateway_controller` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `gateway_sdpid` int(11) NOT NULL,
   `controller_sdpid` int(11) NOT NULL,
   PRIMARY KEY (`id`),
   KEY `gateway_sdpid` (`gateway_sdpid`),
   KEY `controller_sdpid` (`controller_sdpid`)
-) ENGINE=InnoDB  DEFAULT CHARSET=utf8 COLLATE=utf8_bin AUTO_INCREMENT=3 ;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_bin;
 
 --
 -- RELATIONS FOR TABLE `gateway_controller`:
@@ -173,13 +166,13 @@ CREATE TABLE IF NOT EXISTS `gateway_controller` (
 --
 
 DROP TABLE IF EXISTS `group`;
-CREATE TABLE IF NOT EXISTS `group` (
+CREATE TABLE `group` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
-  `valid` tinyint(4) NOT NULL DEFAULT '1',
+  `enabled` tinyint(1) NOT NULL DEFAULT '1',
   `name` varchar(1024) COLLATE utf8_bin NOT NULL,
   `Description` varchar(4096) COLLATE utf8_bin NOT NULL,
   PRIMARY KEY (`id`)
-) ENGINE=InnoDB  DEFAULT CHARSET=utf8 COLLATE=utf8_bin AUTO_INCREMENT=2 ;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_bin;
 
 --
 -- Triggers `group`
@@ -194,6 +187,18 @@ CREATE TRIGGER `group_after_delete` AFTER DELETE ON `group`
 END
 //
 DELIMITER ;
+DROP TRIGGER IF EXISTS `group_after_update`;
+DELIMITER //
+CREATE TRIGGER `group_after_update` AFTER UPDATE ON `group`
+ FOR EACH ROW BEGIN
+IF OLD.enabled != NEW.enabled THEN
+    INSERT INTO refresh_trigger
+    SET table_name = 'group',
+        event = 'update';
+END IF;
+END
+//
+DELIMITER ;
 
 -- --------------------------------------------------------
 
@@ -202,14 +207,15 @@ DELIMITER ;
 --
 
 DROP TABLE IF EXISTS `group_service`;
-CREATE TABLE IF NOT EXISTS `group_service` (
+CREATE TABLE `group_service` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
+  `enabled` tinyint(1) NOT NULL DEFAULT '1',
   `group_id` int(11) NOT NULL,
   `service_id` int(11) NOT NULL,
   PRIMARY KEY (`id`),
   KEY `service_id` (`service_id`),
   KEY `group_id` (`group_id`)
-) ENGINE=InnoDB  DEFAULT CHARSET=utf8 COLLATE=utf8_bin AUTO_INCREMENT=2 ;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_bin;
 
 --
 -- RELATIONS FOR TABLE `group_service`:
@@ -260,7 +266,7 @@ DELIMITER ;
 --
 
 DROP TABLE IF EXISTS `open_connection`;
-CREATE TABLE IF NOT EXISTS `open_connection` (
+CREATE TABLE `open_connection` (
   `gateway_sdpid` int(11) NOT NULL,
   `client_sdpid` int(11) NOT NULL,
   `service_id` int(11) NOT NULL,
@@ -297,13 +303,13 @@ CREATE TABLE IF NOT EXISTS `open_connection` (
 --
 
 DROP TABLE IF EXISTS `refresh_trigger`;
-CREATE TABLE IF NOT EXISTS `refresh_trigger` (
-  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+CREATE TABLE `refresh_trigger` (
+  `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT,
   `timestamp` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `table_name` tinytext COLLATE utf8_bin NOT NULL,
   `event` tinytext COLLATE utf8_bin NOT NULL,
   PRIMARY KEY (`id`)
-) ENGINE=InnoDB  DEFAULT CHARSET=utf8 COLLATE=utf8_bin AUTO_INCREMENT=43 ;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_bin;
 
 -- --------------------------------------------------------
 
@@ -312,9 +318,9 @@ CREATE TABLE IF NOT EXISTS `refresh_trigger` (
 --
 
 DROP TABLE IF EXISTS `sdpid`;
-CREATE TABLE IF NOT EXISTS `sdpid` (
+CREATE TABLE `sdpid` (
   `sdpid` int(11) NOT NULL AUTO_INCREMENT,
-  `valid` tinyint(1) NOT NULL DEFAULT '1',
+  `enabled` tinyint(1) NOT NULL DEFAULT '1',
   `type` enum('client','gateway','controller') COLLATE utf8_bin NOT NULL DEFAULT 'client',
   `country` varchar(128) COLLATE utf8_bin NOT NULL,
   `state` varchar(128) COLLATE utf8_bin NOT NULL,
@@ -326,14 +332,14 @@ CREATE TABLE IF NOT EXISTS `sdpid` (
   `encrypt_key` varchar(2048) COLLATE utf8_bin DEFAULT NULL,
   `hmac_key` varchar(2048) COLLATE utf8_bin DEFAULT NULL,
   `serial` varchar(32) COLLATE utf8_bin NOT NULL,
-  `last_cred_update` timestamp NOT NULL DEFAULT '0000-00-00 00:00:00',
-  `cred_update_due` timestamp NOT NULL DEFAULT '0000-00-00 00:00:00',
+  `last_cred_update` timestamp NOT NULL DEFAULT '1970-01-01 05:00:00',
+  `cred_update_due` timestamp NOT NULL DEFAULT '1970-01-01 05:00:00',
   `user_id` int(11) DEFAULT NULL,
   `environment_id` int(11) DEFAULT NULL,
   PRIMARY KEY (`sdpid`),
   KEY `user_id` (`user_id`),
   KEY `environment_id` (`environment_id`)
-) ENGINE=InnoDB  DEFAULT CHARSET=utf8 COLLATE=utf8_bin AUTO_INCREMENT=55556 ;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_bin;
 
 --
 -- RELATIONS FOR TABLE `sdpid`:
@@ -361,7 +367,7 @@ DELIMITER //
 CREATE TRIGGER `sdpid_after_update` AFTER UPDATE ON `sdpid`
  FOR EACH ROW BEGIN
 IF OLD.user_id != NEW.user_id OR
-   OLD.valid != NEW.valid THEN
+   OLD.enabled != NEW.enabled THEN
     INSERT INTO refresh_trigger
     SET table_name = 'sdpid',
         event = 'update';
@@ -377,14 +383,15 @@ DELIMITER ;
 --
 
 DROP TABLE IF EXISTS `sdpid_service`;
-CREATE TABLE IF NOT EXISTS `sdpid_service` (
+CREATE TABLE `sdpid_service` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
+  `enabled` tinyint(1) NOT NULL DEFAULT '1',
   `sdpid` int(11) NOT NULL,
   `service_id` int(11) NOT NULL,
   PRIMARY KEY (`id`),
   KEY `service_id` (`service_id`),
   KEY `sdpid` (`sdpid`)
-) ENGINE=InnoDB  DEFAULT CHARSET=utf8 COLLATE=utf8_bin AUTO_INCREMENT=11 ;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_bin;
 
 --
 -- RELATIONS FOR TABLE `sdpid_service`:
@@ -435,12 +442,12 @@ DELIMITER ;
 --
 
 DROP TABLE IF EXISTS `service`;
-CREATE TABLE IF NOT EXISTS `service` (
+CREATE TABLE `service` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `name` varchar(1024) COLLATE utf8_bin NOT NULL,
   `description` varchar(4096) COLLATE utf8_bin NOT NULL,
   PRIMARY KEY (`id`)
-) ENGINE=InnoDB  DEFAULT CHARSET=utf8 COLLATE=utf8_bin AUTO_INCREMENT=6 ;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_bin;
 
 --
 -- Triggers `service`
@@ -463,18 +470,19 @@ DELIMITER ;
 --
 
 DROP TABLE IF EXISTS `service_gateway`;
-CREATE TABLE IF NOT EXISTS `service_gateway` (
+CREATE TABLE `service_gateway` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
+  `enabled` tinyint(1) NOT NULL DEFAULT '1',
   `service_id` int(11) NOT NULL,
   `gateway_sdpid` int(11) NOT NULL,
   `protocol` tinytext COLLATE utf8_bin NOT NULL COMMENT 'TCP, UDP',
-  `port` int(10) unsigned NOT NULL,
+  `port` int(10) UNSIGNED NOT NULL,
   `nat_ip` varchar(128) COLLATE utf8_bin NOT NULL DEFAULT '' COMMENT '1.1.1.1   internal IP address',
-  `nat_port` int(10) unsigned NOT NULL DEFAULT '0',
+  `nat_port` int(10) UNSIGNED NOT NULL DEFAULT '0',
   PRIMARY KEY (`id`),
   KEY `service_id` (`service_id`),
   KEY `gateway_sdpid` (`gateway_sdpid`)
-) ENGINE=InnoDB  DEFAULT CHARSET=utf8 COLLATE=utf8_bin AUTO_INCREMENT=5 ;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_bin;
 
 --
 -- RELATIONS FOR TABLE `service_gateway`:
@@ -525,7 +533,7 @@ DELIMITER ;
 --
 
 DROP TABLE IF EXISTS `user`;
-CREATE TABLE IF NOT EXISTS `user` (
+CREATE TABLE `user` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `last_name` varchar(128) COLLATE utf8_bin NOT NULL,
   `first_name` varchar(128) COLLATE utf8_bin NOT NULL,
@@ -537,7 +545,7 @@ CREATE TABLE IF NOT EXISTS `user` (
   `alt_name` varchar(128) COLLATE utf8_bin DEFAULT NULL,
   `email` varchar(128) COLLATE utf8_bin NOT NULL,
   PRIMARY KEY (`id`)
-) ENGINE=InnoDB  DEFAULT CHARSET=utf8 COLLATE=utf8_bin AUTO_INCREMENT=3 ;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_bin;
 
 --
 -- Triggers `user`
@@ -560,14 +568,15 @@ DELIMITER ;
 --
 
 DROP TABLE IF EXISTS `user_group`;
-CREATE TABLE IF NOT EXISTS `user_group` (
+CREATE TABLE `user_group` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
+  `enabled` tinyint(1) NOT NULL DEFAULT '1',
   `user_id` int(11) NOT NULL,
   `group_id` int(11) NOT NULL,
   PRIMARY KEY (`id`),
   KEY `user_id` (`user_id`),
   KEY `group_id` (`group_id`)
-) ENGINE=InnoDB  DEFAULT CHARSET=utf8 COLLATE=utf8_bin AUTO_INCREMENT=2 ;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_bin;
 
 --
 -- RELATIONS FOR TABLE `user_group`:
