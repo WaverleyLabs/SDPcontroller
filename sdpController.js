@@ -53,7 +53,9 @@ var serverKeyPassword = config.serverKeyPassword;
 var myCredentialMaker = new credentialMaker(config);
 var connectedGateways = [];
 var connectedClients  = [];
-var nextConnectionId  = 1;
+var nextConnectionId  = 1;   // for conns to this controller, not clients to services
+var openConIndex      = 1;   // for indexing open conns of clients to services
+const MAX_UINT32      = 4294967295;  // 4,294,967,295
 var checkDatabaseTries = 0;
 var checkOpenConnectionsTries = 0;
 var lastDatabaseCheck = new Date();
@@ -205,7 +207,7 @@ function startServer() {
         var badMessagesReceived = 0;
         var newKeys = null;
         var accessRefreshDue = false;
-        var connectionId = nextConnectionId;
+        var connectionId = nextConnectionId;  // tracks conns to this controller
         var expectedMessageSize = 0;
         var totalSizeBytesReceived = 0;
         var sizeBytesNeeded = 0;
@@ -462,6 +464,8 @@ function startServer() {
                 handleAccessAck();
             } else if (action === 'connection_update') {
                 handleConnectionUpdate(message);
+            } else if (action === 'tunnel_ip') {
+                return;
             } else if (action === 'bad_message') {
                 // doing nothing with these yet
                 return;
@@ -1355,8 +1359,9 @@ function startServer() {
                 else
                     natPort = 0;
                     
-                if(element['end_timestamp'] == 0)
-                    openConns.push([  memberDetails.sdpid,
+                if(element['end_timestamp'] == 0) {
+                    openConns.push([  openConIndex,
+                                      memberDetails.sdpid,
                                       element['sdp_id'],
                                       element['service_id'],
                                       element['start_timestamp'],
@@ -1370,6 +1375,13 @@ function startServer() {
                                       natPort,
                                       connectionId
                                    ]);
+
+                    if(openConIndex >= MAX_UINT32) {
+                        openConIndex = 1;
+                    } else {
+                        openConIndex++;
+                    }
+                }
                 else {
                     closedConns.push([  memberDetails.sdpid,
                                         element['sdp_id'],
@@ -1542,8 +1554,8 @@ function startServer() {
                 
                 if(openConns != null && openConns.length > 0) {
                     connection.query(
-                        'INSERT IGNORE INTO `open_connection` (`gateway_sdpid`, `client_sdpid`, ' +
-                        '`service_id`, `start_timestamp`, `end_timestamp`, `protocol`, ' +
+                        'INSERT IGNORE INTO `open_connection` (`open_con_index`, `gateway_sdpid`, ' +
+                        '`client_sdpid`, `service_id`, `start_timestamp`, `end_timestamp`, `protocol`, ' +
                         '`source_ip`, `source_port`, `destination_ip`, `destination_port`, ' +
                         '`nat_destination_ip`, `nat_destination_port`, `gateway_controller_connection_id`) ' +
                         'VALUES ? ',

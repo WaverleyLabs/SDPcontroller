@@ -267,6 +267,7 @@ DELIMITER ;
 
 DROP TABLE IF EXISTS `open_connection`;
 CREATE TABLE `open_connection` (
+  `open_con_index` int(10) UNSIGNED NOT NULL,
   `gateway_sdpid` int(11) NOT NULL,
   `client_sdpid` int(11) NOT NULL,
   `service_id` int(11) NOT NULL,
