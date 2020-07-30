@@ -995,21 +995,13 @@ function startServer() {
                         var data = [];
                         for(var rowIdx = 0; rowIdx < rows.length; rowIdx++) {
                             var thisRow = rows[rowIdx];
-                            if(thisRow.nat_ip != '' && thisRow.nat_port != 0) {
-                                data.push({
-                                    service_id: thisRow.service_id,
-                                    proto: thisRow.protocol,
-                                    port: thisRow.port,
-                                    nat_ip: thisRow.nat_ip,
-                                    nat_port: thisRow.nat_port,
-                                });
-                            } else {
-                                data.push({
-                                    service_id: thisRow.service_id,
-                                    proto: thisRow.protocol,
-                                    port: thisRow.port,
-                                });
-                            }
+                            data.push({
+                                service_id: thisRow.service_id,
+                                proto: thisRow.protocol,
+                                port: thisRow.port,
+                                nat_ip: thisRow.nat_ip,
+                                nat_port: thisRow.nat_port,
+                            });
                         }
                         
                         if(config.debug) {
@@ -1372,7 +1364,7 @@ function startServer() {
                 console.log("Received connection update message:\n"+ 
                             "     Gateway SDP ID: %d \n"+
                             "   Connection count: %d \n",
-                            node.sdpId,
+                            memberDetails.sdpid,
                             message['data'].length);
             }
             
