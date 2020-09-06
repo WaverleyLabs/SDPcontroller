@@ -4,7 +4,7 @@
 openssl req -x509 -sha256 -nodes -days 365 -newkey rsa:4096 -keyout ca.key -out ca.crt
 
 # Create the Server Key, CSR, and Certificate
-openssl genrsa -out server.key 1024
+openssl genrsa -out server.key 2048
 openssl req -new -key server.key -out server.csr
 
 # We're self signing our own server cert here.  This is a no-no in production.
