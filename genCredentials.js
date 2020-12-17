@@ -6,10 +6,10 @@ var credentialMaker = require('./sdpCredentialMaker');
 var prompt = require("prompt");
 
 
-const encryptionKeyLenMin = 4;
-const encryptionKeyLenMax = 32;
-const hmacKeyLenMin = 4;
-const hmacKeyLenMax = 128;
+const encryptionKeyLenMin = 64;
+const encryptionKeyLenMax = 256;
+const hmacKeyLenMin = 64;
+const hmacKeyLenMax = 256;
 
 
 //If the user specified the config path, get it

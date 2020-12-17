@@ -44,8 +44,8 @@ module.exports = {
 	// how many days new certificates should be good for
 	'daysToExpiration': 31,
 
-	// SPA encryption key length in bytes, range is 4 to 32
-	'encryptionKeyLen': 32,
+    // SPA encryption key length in bytes, range is 64 to 256
+    'encryptionKeyLen': 256,
 
 	// SPA HMAC key length in bytes, range is 4 to 128
 	'hmacKeyLen': 128,

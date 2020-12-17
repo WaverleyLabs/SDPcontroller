@@ -41,10 +41,10 @@ if(process.argv.length > 2) {
 
 const MSG_SIZE_FIELD_LEN = 4;
 
-const encryptionKeyLenMin = 4;
-const encryptionKeyLenMax = 32;
-const hmacKeyLenMin = 4;
-const hmacKeyLenMax = 128;
+const encryptionKeyLenMin = 64;
+const encryptionKeyLenMax = 256;
+const hmacKeyLenMin = 64;
+const hmacKeyLenMax = 256;
 
 // a couple global variables
 var db;
