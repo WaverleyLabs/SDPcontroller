@@ -60,12 +60,15 @@ To use this module:
     
     a.  sdpid – at least one entry for each of the three required 
         components
+        
     b.  service – the controller should be included as an entry in this
         table
+        
     c.  service_gateway – for each active service, there should be at 
         least one entry declaring the gateway(s) by which it is 
         protected. There can be multiple instances of a service and/or 
         multiple gateways protecting a service instance.
+        
     d.  sdpid_service – which SDP IDs have access to a service. Remote 
         gateways must have an entry here, providing access to the 
         controller if the controller is behind another gateway.
@@ -76,15 +79,20 @@ To use this module:
     the following additional tables:
     
     a.  user
+    
     b.  group
+    
     c.  user_group
+    
     d.  group_service
 
     The following tables are currently placeholders that may prove 
     important later:
     
     a.  controller
+    
     b.  gateway
+    
     c.  gateway_controller
     
 8.  In the SDPcontroller project, edit ./config.js based on previous 
@@ -96,6 +104,7 @@ To use this module:
     following commands in the terminal:
 
     openssl genrsa -des3 -out ca.key 4096
+    
     openssl req -new -x509 -days 365 -key ca.key -out ca.crt
 
 11. Generate sample keys and certs for each SDP component. This step 
