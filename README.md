@@ -101,11 +101,9 @@ To use this module:
 9.  If not already installed, install openssl 
 
 10. Create a certificate authority key and certificate using the 
-    following commands in the terminal:
+    following command in the terminal:
 
-    openssl genrsa -des3 -out ca.key 4096
-    
-    openssl req -new -x509 -days 365 -key ca.key -out ca.crt
+    openssl req -x509 -sha256 -nodes -days 365 -newkey rsa:4096 -keyout ca.key -out ca.crt
 
 11. Generate sample keys and certs for each SDP component. This step 
     assumes that a complete set of information about each SDP ID 
